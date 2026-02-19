@@ -1,4 +1,16 @@
-export type Category = 'Sälj' | 'Projekt' | 'HR' | 'Idéer' | 'Övrigt';
+export interface Project {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+export interface CategoryData {
+  id: string;
+  projectId: string; 
+  name: string;
+  subCategories: string[];
+}
+
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
 
 export interface Person {
@@ -8,6 +20,7 @@ export interface Person {
   region: string;
   email?: string;
   avatarColor?: string;
+  projectIds: string[];
 }
 
 export interface Task {
@@ -50,7 +63,9 @@ export interface Meeting {
   title: string;
   date: string;
   duration: number;
-  category: Category;
+  projectId?: string; // Ersätter hårdkodad kategori
+  categoryId?: string; 
+  subCategoryName?: string;
   participantIds: string[];
   description?: string;
   isProcessed: boolean;

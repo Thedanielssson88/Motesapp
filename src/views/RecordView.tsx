@@ -5,14 +5,16 @@ import { audioRecorder } from '../services/audioRecorder';
 import { db } from '../services/db';
 import { Mic, Square, ArrowLeft, Tag, Users, StickyNote, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Category, QuickNote } from '../types';
+import { Category, QuickNote, Project, CategoryData } from '../types';
 
 export const RecordView = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<Category>('Övrigt');
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>();
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string | undefined>();
   const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
   const [showNoteInput, setShowNoteInput] = useState(false);
@@ -20,8 +22,8 @@ export const RecordView = () => {
   
   const navigate = useNavigate();
   const people = useLiveQuery(() => db.people.toArray());
-
-  const categories: Category[] = ['Sälj', 'Projekt', 'HR', 'Idéer', 'Övrigt'];
+  const projects = useLiveQuery(() => db.projects.toArray());
+  const categories = useLiveQuery(() => selectedProjectId ? db.categories.where('projectId').equals(selectedProjectId).toArray() : Promise.resolve([]), [selectedProjectId]);
 
   useEffect(() => {
     let interval: any;
@@ -75,7 +77,9 @@ export const RecordView = () => {
           title: title || `Möte ${new Date().toLocaleDateString()}`,
           date: new Date().toISOString(),
           duration,
-          category,
+          projectId: selectedProjectId,
+          categoryId: selectedCategoryId,
+          subCategoryName: selectedSubCategory,
           participantIds: selectedPeople,
           isProcessed: false,
           quickNotes
@@ -127,22 +131,31 @@ export const RecordView = () => {
 
       {/* Settings Area */}
       <div className="space-y-4 mb-8">
-        {/* Category Selector */}
+        {/* Project Selector */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-          {categories.map(cat => (
+          {projects?.map(proj => (
             <button
-              key={cat}
-              onClick={() => setCategory(cat)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                category === cat 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {cat}
+              key={proj.id}
+              onClick={() => setSelectedProjectId(proj.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedProjectId === proj.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {proj.name}
             </button>
           ))}
         </div>
+
+        {/* Category Selector */}
+        {selectedProjectId && (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+            {categories?.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategoryId(cat.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedCategoryId === cat.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Participants Selector */}
         <div>

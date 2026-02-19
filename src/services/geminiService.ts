@@ -10,7 +10,7 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 };
 
 export const processMeetingAI = async (meetingId: string) => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = localStorage.getItem('GEMINI_API_KEY');
   if (!apiKey) throw new Error("API-nyckel saknas");
 
   const meeting = await db.meetings.get(meetingId);
