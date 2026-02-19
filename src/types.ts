@@ -1,4 +1,3 @@
-// --- NYA TYPER FÖR ROLLER ---
 export enum MemberGroup {
   STEERING = 'Styrgrupp',
   CORE_TEAM = 'Projektgrupp',
@@ -8,19 +7,24 @@ export enum MemberGroup {
 }
 
 export interface ProjectMember {
-  id: string;          // Unikt ID för just denna koppling
-  projectId: string;   // Projektet det gäller
-  personId: string;    // Personen det gäller
-  group: MemberGroup;  // Huvudnivå (t.ex. Styrgrupp)
-  customRole?: string; // Fritext/Specifik roll i detta projekt (t.ex. "Scrum Master")
+  id: string;
+  projectId: string;
+  personId: string;
+  group: MemberGroup;
+  customRole?: string;
 }
 
-// --- BEFINTLIGA TYPER (UPPDATERADE) ---
+// Korrekt och slutgiltig typ för inställningar
+export interface Setting {
+  id: 'geminiApiKey' | 'aiModel'; // Endast dessa två nycklar är tillåtna
+  value: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   color?: string;
-  definedRoles?: string[]; // NY: Unika roller man kan välja i just detta projekt
+  definedRoles?: string[];
 }
 
 export interface CategoryData {
@@ -35,11 +39,11 @@ export type TaskStatus = 'todo' | 'in_progress' | 'done';
 export interface Person {
   id: string;
   name: string;
-  role: string; // Detta blir personens "Globala/Yrkestitel" (t.ex. Utvecklare)
+  role: string;
   region: string;
   email?: string;
   avatarColor?: string;
-  projectIds: string[]; // Behålls för enkel bakåtkompatibilitet
+  projectIds: string[];
 }
 
 export interface Task {
@@ -76,9 +80,6 @@ export interface QuickNote {
   text: string;
 }
 
-
-// ... Behåll Task, TranscriptionSegment, MeetingProtocol, PersonLog, QuickNote oförändrade ...
-
 export interface Meeting {
   id: string;
   title: string;
@@ -88,10 +89,9 @@ export interface Meeting {
   categoryId?: string; 
   subCategoryName?: string;
   participantIds: string[];
-  absentParticipantIds?: string[]; // Din frånvarofunktion är kvar!
+  absentParticipantIds?: string[];
   description?: string;
   isProcessed: boolean;
-  
   transcription?: TranscriptionSegment[];
   protocol?: MeetingProtocol;
   quickNotes?: QuickNote[];

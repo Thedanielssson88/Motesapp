@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Mic, Users, CheckSquare, Settings } from 'lucide-react';
+import { Mic, Users, CheckSquare, Settings, FolderKanban } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export const BottomNav = () => {
   const loc = useLocation();
   const navItems = [
     { icon: Mic, label: 'Möten', path: '/' },
+    { icon: FolderKanban, label: 'Projekt', path: '/projects' },
     { icon: CheckSquare, label: 'Uppgifter', path: '/tasks' },
     { icon: Users, label: 'Personer', path: '/people' },
     { icon: Settings, label: 'Inställningar', path: '/settings' },

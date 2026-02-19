@@ -13,6 +13,8 @@ import { TasksView } from './views/TasksView';
 import { PeopleView } from './views/PeopleView';
 import { PersonDetail } from './views/PersonDetail';
 import { SettingsView } from './views/SettingsView';
+import ProjectsView from './views/ProjectsView';
+import ProjectDetailView from './views/ProjectDetailView';
 import { BottomNav } from './components/BottomNav';
 
 function App() {
@@ -32,6 +34,8 @@ function App() {
             <Route path="/people" element={<PeopleView />} />
             <Route path="/person/:id" element={<PersonDetail />} />
             <Route path="/settings" element={<SettingsView />} />
+            <Route path="/projects" element={<ProjectsView />} />
+            <Route path="/project/:projectId" element={<ProjectDetailView />} />
           </Routes>
         </div>
         <BottomNav />
