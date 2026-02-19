@@ -17,7 +17,7 @@ export const SettingsView = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 pb-24">
+    <div className="min-h-screen bg-white p-6 pb-24">
       <h1 className="text-2xl font-bold mb-6">Inställningar</h1>
 
       <div className="space-y-6">

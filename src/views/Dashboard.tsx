@@ -25,7 +25,7 @@ export const Dashboard = () => {
   }, [searchQuery]);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 pb-24">
+    <div className="min-h-screen bg-white p-6 pb-24">
       <header className="flex justify-between items-center mb-6 pt-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Hej! 👋</h1>

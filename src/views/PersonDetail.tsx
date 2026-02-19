@@ -29,7 +29,7 @@ export const PersonDetail = () => {
   if (!person) return <div className="p-6">Laddar...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24">
+    <div className="min-h-screen bg-white pb-24">
       {/* Header Profile */}
       <div className="bg-white p-6 pb-0 pt-12 relative">
         <button onClick={() => navigate(-1)} className="absolute top-4 left-4 p-2 bg-gray-100 rounded-full">

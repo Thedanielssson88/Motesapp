@@ -6,6 +6,14 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #ffffff; /* White color */
+  color: #0f172a;
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
