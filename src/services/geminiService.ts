@@ -1,5 +1,6 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, HarmBlockThreshold, HarmCategory, type Content, type GenerationConfig, type SafetySetting } from "@google/genai";
 import { db } from "./db";
+import { MemberGroup, Person, Project, ProjectMember, Task, TaskStatus, TranscriptionSegment } from "../types";
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve) => {
@@ -9,129 +10,157 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-export const processMeetingAI = async (meetingId: string) => {
+// This function now returns null if the key is not set, instead of throwing an error.
+const getAIClient = () => {
   const apiKey = localStorage.getItem('GEMINI_API_KEY');
-  if (!apiKey) throw new Error("API-nyckel saknas");
+  if (!apiKey) return null;
+  return new GoogleGenAI(apiKey);
+}
+
+// New exported function to check if the API key is set.
+export const hasApiKey = () => {
+    return localStorage.getItem('GEMINI_API_KEY') !== null;
+}
+
+const getModelName = () => {
+  return localStorage.getItem('AI_MODEL') || 'flash';
+}
+
+const buildPrompt = async (meetingId: string): Promise<string> => {
+  const meeting = await db.meetings.get(meetingId);
+  if (!meeting) throw new Error("Mötet kunde inte hittas");
+
+  const project = meeting.projectId ? await db.projects.get(meeting.projectId) : null;
+  const participants = await db.people.where('id').anyOf(meeting.participantIds).toArray();
+  const projectMembers = project ? await db.projectMembers.where('projectId').equals(project.id).toArray() : [];
+
+  const peopleWithRoles = participants.map(p => {
+    const pMember = projectMembers.find(pm => pm.personId === p.id);
+    const roleText = pMember ? `(${pMember.group}${pMember.customRole ? ', ' + pMember.customRole : ''})` : `(${p.role || 'Deltagare'})`;
+    return `${p.name} ${roleText}`;
+  }).join(', ');
+
+  return `
+    Du är en expert på att analysera och sammanfatta affärsmöten på svenska.
+    
+    **MÖTESINFORMATION:**
+    - **Titel:** ${meeting.title}
+    - **Projekt:** ${project?.name || 'Ej specificerat'}
+    - **Datum:** ${new Date(meeting.date).toLocaleDateString('sv-SE')}
+    - **Deltagare och deras roller i detta projekt:** ${peopleWithRoles}
+
+    **DITT UPPDRAG:**
+    Baserat på ljudfilen eller texten, utför följande uppgifter och svara ALLTID i JSON-format.
+
+    1.  **Sammanfattning (summary):** Skriv en koncis men heltäckande sammanfattning av mötets syfte, diskussioner och slutsatser. Använd mellan 3 och 6 meningar.
+    
+    2.  **Beslut (decisions):** Identifiera och lista alla konkreta beslut som fattades. Varje beslut ska vara en sträng i en array. Om inga beslut fattades, returnera en tom array. Formulera besluten tydligt och aktivt.
+        *Exempel: "Styrgruppen godkände budgeten för Q3."*
+        *VIKTIGT: Fatta inga egna beslut, extrahera endast de som uttryckligen nämns.*
+
+    3.  **Uppgifter (tasks):** Identifiera och lista alla uppgifter som delegerades. Varje uppgift ska vara ett objekt i en array med fälten \\\`title\\\` (sträng), och \\\`assignedTo\\\` (sträng, namnet på den ansvarige). Matcha namnet på den ansvarige mot deltagarlistan. Om en uppgift nämns utan att en ansvarig utses, sätt \\\`assignedTo\\\` till "Okänd". Om inga uppgifter delegerades, returnera en tom array.
+
+    4.  **Transkribering (transcription):** Om du analyserar en ljudfil, transkribera den ordagrant. Inkludera start- och sluttid i sekunder för varje segment. Försök identifiera vem som pratar och märk dem med deras namn från deltagarlistan, eller "Okänd talare" om det inte går att avgöra.
+  `;
+}
+
+export const processMeetingAI = async (meetingId: string) => {
+  const ai = getAIClient();
+  if (!ai) throw new Error("API-nyckel saknas. Gå till inställningar för att ange en.");
+
+  const modelName = getModelName() === 'pro' ? 'gemini-1.5-pro-latest' : 'gemini-1.5-flash-latest';
 
   const meeting = await db.meetings.get(meetingId);
   const audioFile = await db.audioFiles.get(meetingId);
-  const allPeople = await db.people.toArray();
-  
-  if (!meeting || !audioFile) throw new Error("Data saknas");
+  if (!meeting || !audioFile) throw new Error("Data saknas för mötet");
 
-  const ai = new GoogleGenAI({ apiKey });
-  
+  const prompt = await buildPrompt(meetingId);
   const base64Audio = await blobToBase64(audioFile.blob);
-  const peopleNames = allPeople.map(p => p.name).join(', ');
+  
+  const model = ai.getGenerativeModel({ model: modelName });
 
-  const project = meeting.projectId ? await db.projects.get(meeting.projectId) : null;
-  const category = meeting.categoryId ? await db.categories.get(meeting.categoryId) : null;
-
-  const prompt = `
-    Du är en professionell mötessekreterare. Analysera ljudfilen.
-    Mötestitel: ${meeting.title}. Projekt: ${project?.name || 'Inget'}. Kategori: ${category?.name || 'Ingen'}.
-    Kända personer i systemet: ${peopleNames}.
-    
-    1. Transkribera ordagrant (svenska). Identifiera olika talare och märk dem som "Person 1", "Person 2", etc.
-    2. Skriv en koncis sammanfattning av mötet.
-  `;
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
+  const result = await model.generateContent({
+    contents: [{
         parts: [
-          { text: prompt },
-          { inlineData: { mimeType: audioFile.mimeType, data: base64Audio } }
+            { text: prompt },
+            { inlineData: { mimeType: audioFile.mimeType, data: base64Audio } }
         ]
-      }
-    ],
-    config: {
+    }],
+    generationConfig: {
       responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          transcription: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                start: { type: Type.NUMBER },
-                end: { type: Type.NUMBER },
-                text: { type: Type.STRING },
-                speaker: { type: Type.STRING }
-              }
-            }
-          },
-          summary: { type: Type.STRING }
-        }
-      }
     }
   });
 
-  const responseData = JSON.parse(response.text);
-
-  await db.meetings.update(meetingId, {
-    transcription: responseData.transcription,
-    protocol: {
-      summary: responseData.summary
-    },
-    isProcessed: true
-  });
-
+  const response = result.response;
+  const responseData = JSON.parse(response.text());
+  await updateMeetingWithAIData(meetingId, responseData);
   return responseData;
 };
 
 export const reprocessMeetingFromText = async (meetingId: string) => {
-  const apiKey = localStorage.getItem('GEMINI_API_KEY');
-  if (!apiKey) throw new Error("API-nyckel saknas");
+  const ai = getAIClient();
+  if (!ai) throw new Error("API-nyckel saknas. Gå till inställningar för att ange en.");
+  
+  const modelName = getModelName() === 'pro' ? 'gemini-1.5-pro-latest' : 'gemini-1.5-flash-latest';
 
   const meeting = await db.meetings.get(meetingId);
-  const allPeople = await db.people.toArray();
-  
   if (!meeting || !meeting.transcription) throw new Error("Möte eller transkribering saknas");
 
-  const ai = new GoogleGenAI({ apiKey });
-  
+  const prompt = await buildPrompt(meetingId);
   const fullText = meeting.transcription
     .map(t => `[${Math.floor(t.start/60)}:${Math.floor(t.start%60).toString().padStart(2, '0')}] ${t.speaker ? t.speaker + ': ' : ''}${t.text}`)
-    .join('\n');
-    
-  const peopleNames = allPeople.map(p => p.name).join(', ');
+    .join('\\n');
 
-  const project = meeting.projectId ? await db.projects.get(meeting.projectId) : null;
-  const category = meeting.categoryId ? await db.categories.get(meeting.categoryId) : null;
+  const model = ai.getGenerativeModel({ model: modelName });
 
-  const prompt = `
-    Du är en professionell mötessekreterare. Här är en manuellt korrigerad transkribering av ett möte.
-    Mötestitel: ${meeting.title}. Projekt: ${project?.name || 'Inget'}. Kategori: ${category?.name || 'Ingen'}.
-    Kända personer i systemet (för uppgifter): ${peopleNames}.
-
-    UPPGIFT:
-    1. Skriv en professionell sammanfattning av mötet.
-  `;
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: [{ parts: [{ text: prompt }] }],
-    config: {
+  const result = await model.generateContent({
+    contents: [{
+        parts: [
+            { text: prompt },
+            { text: `Här är den fullständiga transkriberingen:\\n\\n${fullText}` }
+        ]
+    }],
+    generationConfig: {
       responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          summary: { type: Type.STRING }
-        }
-      }
     }
   });
-
-  const responseData = JSON.parse(response.text);
-
-  await db.meetings.update(meetingId, {
-    protocol: {
-      summary: responseData.summary
-    }
-  });
-
+  
+  const response = result.response;
+  const responseData = JSON.parse(response.text());
+  await updateMeetingWithAIData(meetingId, responseData);
   return responseData;
 };
+
+
+const updateMeetingWithAIData = async (meetingId: string, data: any) => {
+  const meeting = await db.meetings.get(meetingId);
+  if (!meeting) return;
+
+  const allPeople = await db.people.toArray();
+
+  // Add tasks to the tasks table
+  if (data.tasks && data.tasks.length > 0) {
+    const newTasks: Task[] = data.tasks.map((task: any) => {
+      const assignedPerson = allPeople.find(p => p.name.toLowerCase() === task.assignedTo?.toLowerCase());
+      return {
+        id: crypto.randomUUID(),
+        title: task.title,
+        status: 'todo' as TaskStatus,
+        assignedToId: assignedPerson?.id,
+        linkedMeetingId: meetingId,
+        createdAt: new Date().toISOString()
+      }
+    });
+    await db.tasks.bulkAdd(newTasks);
+  }
+
+  // Update meeting with protocol and transcription
+  await db.meetings.update(meetingId, {
+    protocol: {
+      summary: data.summary || meeting.protocol?.summary || '',
+      decisions: data.decisions || meeting.protocol?.decisions || []
+    },
+    transcription: data.transcription || meeting.transcription,
+    isProcessed: true
+  });
+}

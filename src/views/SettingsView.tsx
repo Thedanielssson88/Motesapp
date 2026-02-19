@@ -63,6 +63,26 @@ export const SettingsView = () => {
         <h1 className="text-2xl font-bold mb-8">Inställningar & Admin</h1>
         <div className="space-y-8">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h2 className="font-bold text-gray-900 mb-4">AI-inställningar</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-1"><Key size={14}/> API Nyckel</label>
+                <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Ange din Gemini API-nyckel" className="w-full bg-gray-50 border-gray-200 rounded-xl text-sm" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-1"><Cpu size={14}/> Modell</label>
+                <select value={model} onChange={e => setModel(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-xl text-sm">
+                  <option value="flash">Gemini 1.5 Flash</option>
+                  <option value="pro">Gemini 1.5 Pro</option>
+                </select>
+              </div>
+            </div>
+            <button onClick={handleSaveSettings} className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-bold mt-6 flex items-center justify-center gap-2">
+              <Save size={16} /> Spara AI-inställningar
+            </button>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <h2 className="font-bold text-gray-900 mb-4">Personer</h2>
             <div className="grid grid-cols-2 gap-2 mb-2">
               <input type="text" value={newPersonName} onChange={e => setNewPersonName(e.target.value)} placeholder="Namn..." className="bg-gray-50 border-gray-200 rounded-xl text-sm" />
@@ -89,8 +109,6 @@ export const SettingsView = () => {
               ))}
             </div>
           </div>
-
-          {/* API & Model Settings */}
         </div>
       </div>
 

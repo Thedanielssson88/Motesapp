@@ -1,9 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
 import { Link } from 'react-router-dom';
-import { Mic, Clock, Calendar, Search, X } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { Mic, Clock, Calendar, Search, X, AlertTriangle, Settings } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
 import { Project, CategoryData, Meeting } from '../types';
+import { hasApiKey } from '../services/geminiService'; // Import the new function
 
 interface EnrichedMeeting extends Meeting {
   projectName?: string;
@@ -13,6 +14,12 @@ interface EnrichedMeeting extends Meeting {
 export const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeProjectId, setActiveProjectId] = useState<string | 'all'>('all');
+  const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
+
+  // Check for API key on component mount
+  useEffect(() => {
+    setIsApiKeyMissing(!hasApiKey());
+  }, []);
 
   const projects = useLiveQuery(() => db.projects.toArray());
   const categories = useLiveQuery(() => db.categories.toArray());
@@ -55,6 +62,24 @@ export const Dashboard = () => {
           <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Avatar" />
         </div>
       </header>
+
+      {/* API Key missing warning */}
+      {isApiKeyMissing && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-lg">
+            <div className="flex">
+                <div className="py-1">
+                    <AlertTriangle className="h-5 w-5 text-yellow-500 mr-3" />
+                </div>
+                <div>
+                    <p className="font-bold">Gemini API-nyckel saknas</p>
+                    <p className="text-sm">För att kunna analysera dina möten, vänligen lägg till din API-nyckel i inställningarna.</p>
+                    <Link to="/settings" className="text-sm text-yellow-700 hover:text-yellow-800 font-semibold mt-2 inline-flex items-center gap-1">
+                        Gå till Inställningar <Settings size={14} />
+                    </Link>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="relative mb-6">

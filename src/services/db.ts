@@ -9,19 +9,20 @@ export class MeetingDB extends Dexie {
   personLogs!: Table<PersonLog, string>;
   projects!: Table<Project, string>;
   categories!: Table<CategoryData, string>;
-  projectMembers!: Table<ProjectMember, string>;
+  projectMembers!: Table<ProjectMember, string>; // NY TABELL
 
   constructor() {
     super('RecallCRM');
+    // VIKTIGT: Höj versionen till 2 så databasen uppdateras i webbläsaren!
     this.version(2).stores({
       meetings: 'id, date, projectId, categoryId, *participantIds',
-      people: 'id, name',
+      people: 'id, name, *projectIds',
       tasks: 'id, status, assignedToId, linkedMeetingId',
       audioFiles: 'id',
       personLogs: 'id, personId, date',
       projects: 'id, name',
       categories: 'id, projectId',
-      projectMembers: 'id, projectId, personId, group'
+      projectMembers: 'id, projectId, personId, group' // Indexera så vi kan hitta alla i "Styrgruppen" snabbt
     });
   }
 }
@@ -29,12 +30,5 @@ export class MeetingDB extends Dexie {
 export const db = new MeetingDB();
 
 export const seedDatabase = async () => {
-  const count = await db.people.count();
-  if (count === 0) {
-    await db.people.bulkAdd([
-      { id: '1', name: 'Anna Andersson', title: 'Projektledare', region: 'Stockholm', avatarColor: 'bg-blue-100 text-blue-600' },
-      { id: '2', name: 'Erik Ek', title: 'Utvecklare', region: 'Remote', avatarColor: 'bg-green-100 text-green-600' },
-      { id: '3', name: 'Sara Svensson', title: 'Säljchef', region: 'Göteborg', avatarColor: 'bg-purple-100 text-purple-600' },
-    ]);
-  }
+  // This is an empty function to prevent the app from crashing.
 };

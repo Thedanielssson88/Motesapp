@@ -5,30 +5,48 @@ import { audioRecorder } from '../services/audioRecorder';
 import { db } from '../services/db';
 import { Mic, Square, ArrowLeft, Users, StickyNote, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
-import { QuickNote, Project, CategoryData } from '../types';
+import { QuickNote, MemberGroup } from '../types';
 import { BottomSheet } from '../components/BottomSheet';
 
 export const RecordView = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Data states
   const [title, setTitle] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>();
   const [selectedSubCategory, setSelectedSubCategory] = useState<string | undefined>();
   const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
+  
+  // Notes states
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
   const [showNoteInput, setShowNoteInput] = useState(false);
   const [currentNote, setCurrentNote] = useState('');
+  
+  // Modal states
   const [modal, setModal] = useState<'project' | 'person' | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [newPersonName, setNewPersonName] = useState('');
   const [newPersonRole, setNewPersonRole] = useState('');
+  const [newPersonGroup, setNewPersonGroup] = useState<MemberGroup>(MemberGroup.CORE_TEAM);
 
   const navigate = useNavigate();
+
+  // Live queries from Dexie
   const people = useLiveQuery(() => db.people.toArray());
   const projects = useLiveQuery(() => db.projects.toArray());
-  const categories = useLiveQuery(() => selectedProjectId ? db.categories.where('projectId').equals(selectedProjectId).toArray() : Promise.resolve([]), [selectedProjectId]);
+  const categories = useLiveQuery(
+    () => selectedProjectId ? db.categories.where('projectId').equals(selectedProjectId).toArray() : Promise.resolve([]), 
+    [selectedProjectId]
+  );
+  
+  // NYTT: Hämta alla projektroller (ProjectMembers) för det valda projektet
+  const projectMembers = useLiveQuery(
+    () => selectedProjectId ? db.projectMembers.where('projectId').equals(selectedProjectId).toArray() : Promise.resolve([]),
+    [selectedProjectId]
+  );
 
   useEffect(() => {
     let interval: any;
@@ -72,6 +90,7 @@ export const RecordView = () => {
       const blob = await audioRecorder.stop();
       setIsRecording(false);
       const id = crypto.randomUUID();
+      
       await db.transaction('rw', db.meetings, db.audioFiles, async () => {
         await db.meetings.add({
           id,
@@ -113,11 +132,34 @@ export const RecordView = () => {
 
   const handleAddPerson = async () => {
     if (!newPersonName.trim()) return;
-    const newId = crypto.randomUUID();
-    await db.people.add({ id: newId, name: newPersonName, role: newPersonRole || 'Deltagare', projectIds: [], region: 'Okänd' });
-    togglePerson(newId);
+    const newPersonId = crypto.randomUUID();
+    
+    // Använd en transaktion för att lägga till både person och projektkoppling samtidigt
+    await db.transaction('rw', db.people, db.projectMembers, async () => {
+      await db.people.add({ 
+        id: newPersonId, 
+        name: newPersonName, 
+        role: newPersonRole || 'Deltagare', 
+        projectIds: selectedProjectId ? [selectedProjectId] : [], 
+        region: 'Okänd' 
+      });
+
+      // Om ett projekt är valt, skapa en ProjectMember-koppling direkt
+      if (selectedProjectId) {
+        await db.projectMembers.add({
+          id: crypto.randomUUID(),
+          projectId: selectedProjectId,
+          personId: newPersonId,
+          group: newPersonGroup,
+          customRole: newPersonRole // Använd inmatningen som custom role i detta projekt
+        });
+      }
+    });
+
+    togglePerson(newPersonId); // Kryssa i personen direkt
     setNewPersonName('');
     setNewPersonRole('');
+    setNewPersonGroup(MemberGroup.CORE_TEAM);
     setModal(null);
   };
 
@@ -131,7 +173,9 @@ export const RecordView = () => {
     <>
       <div className="h-screen bg-white flex flex-col p-6 overflow-y-auto no-scrollbar">
         <div className="flex items-center mb-6">
-          <button onClick={() => navigate(-1)} className="p-2 bg-gray-100 rounded-full"><ArrowLeft size={20} /></button>
+          <button onClick={() => navigate(-1)} className="p-2 bg-gray-100 rounded-full">
+            <ArrowLeft size={20} />
+          </button>
           <span className="ml-4 font-bold text-lg">Ny Inspelning</span>
         </div>
 
@@ -144,87 +188,187 @@ export const RecordView = () => {
         />
 
         <div className="space-y-4 mb-8">
+          {/* Projekt */}
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
             {projects?.map(proj => (
-              <button key={proj.id} onClick={() => setSelectedProjectId(proj.id)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedProjectId === proj.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{proj.name}</button>
+              <button 
+                key={proj.id} 
+                onClick={() => setSelectedProjectId(proj.id)} 
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedProjectId === proj.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {proj.name}
+              </button>
             ))}
-            <button onClick={() => setModal('project')} className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center gap-1"><Plus size={12} /> Nytt</button>
+            <button onClick={() => setModal('project')} className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center gap-1">
+              <Plus size={12} /> Nytt
+            </button>
           </div>
 
+          {/* Kategorier */}
           {selectedProjectId && (
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
               {categories?.map(cat => (
-                <button key={cat.id} onClick={() => setSelectedCategoryId(cat.id)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedCategoryId === cat.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat.name}</button>
+                <button 
+                  key={cat.id} 
+                  onClick={() => setSelectedCategoryId(cat.id)} 
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedCategoryId === cat.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  {cat.name}
+                </button>
               ))}
             </div>
           )}
 
+          {/* Underkategorier */}
           {selectedCategoryId && categories?.find(c => c.id === selectedCategoryId)?.subCategories.length > 0 && (
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
               {categories?.find(c => c.id === selectedCategoryId)?.subCategories.map(subCat => (
-                <button key={subCat} onClick={() => setSelectedSubCategory(subCat)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedSubCategory === subCat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{subCat}</button>
+                <button 
+                  key={subCat} 
+                  onClick={() => setSelectedSubCategory(subCat)} 
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${selectedSubCategory === subCat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  {subCat}
+                </button>
               ))}
             </div>
           )}
 
+          {/* Deltagare */}
           <div>
-            <div className="flex items-center gap-2 text-sm text-gray-500 mb-2"><Users size={14} /><span>Deltagare</span></div>
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+              <Users size={14} /><span>Deltagare</span>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {projectMembers?.filter(pm => pm.projectId === selectedProjectId).map(pm => {
-                const person = people?.find(p => p.id === pm.personId);
-                return person ? (
-                  <button key={person.id} onClick={() => togglePerson(person.id)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${selectedPeople.includes(person.id) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{person.name}</button>
-                ) : null;
+              {people?.map(person => {
+                // NYTT: Hitta personens roll i just det här projektet
+                const pMember = projectMembers?.find(pm => pm.personId === person.id);
+                const roleLabel = pMember ? ` (${pMember.group})` : '';
+
+                return (
+                  <button 
+                    key={person.id} 
+                    onClick={() => togglePerson(person.id)} 
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${selectedPeople.includes(person.id) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                  >
+                    {person.name} <span className="opacity-70 font-normal">{roleLabel}</span>
+                  </button>
+                )
               })}
-              <button onClick={() => setModal('person')} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed text-gray-500 hover:bg-gray-50 flex items-center gap-1"><Plus size={12} /> Ny Person</button>
+              <button onClick={() => setModal('person')} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed text-gray-500 hover:bg-gray-50 flex items-center gap-1">
+                <Plus size={12} /> Ny Person
+              </button>
             </div>
           </div>
         </div>
 
+        {/* Visualizer */}
         <div className="flex-1 flex flex-col items-center justify-center relative min-h-[200px]">
           <canvas ref={canvasRef} width={300} height={150} className="w-full h-40" />
           <div className="text-6xl font-mono font-medium text-gray-800 mt-8 tracking-tighter">{formatTime(duration)}</div>
         </div>
 
+        {/* Anteckningar */}
         {quickNotes.length > 0 && (
           <div className="mb-6 max-h-32 overflow-y-auto">
             <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Anteckningar</h4>
             {quickNotes.map((note, idx) => (
-              <div key={idx} className="text-sm text-gray-600 mb-1"><span className="font-mono text-xs text-blue-500 mr-2">{formatTime(note.timestamp)}</span>{note.text}</div>
+              <div key={idx} className="text-sm text-gray-600 mb-1">
+                <span className="font-mono text-xs text-blue-500 mr-2">{formatTime(note.timestamp)}</span>{note.text}
+              </div>
             ))}
           </div>
         )}
 
         {showNoteInput && (
           <div className="mb-4 flex gap-2">
-            <input type="text" autoFocus placeholder="Skriv anteckning..." className="flex-1 bg-gray-50 border-gray-200 rounded-lg text-sm" value={currentNote} onChange={e => setCurrentNote(e.target.value)} onKeyDown={e => e.key === 'Enter' && addQuickNote()} />
-            <button onClick={addQuickNote} className="p-2 bg-blue-600 text-white rounded-lg"><Plus size={18} /></button>
+            <input 
+              type="text" 
+              autoFocus 
+              placeholder="Skriv anteckning..." 
+              className="flex-1 bg-gray-50 border-gray-200 rounded-lg text-sm p-3" 
+              value={currentNote} 
+              onChange={e => setCurrentNote(e.target.value)} 
+              onKeyDown={e => e.key === 'Enter' && addQuickNote()} 
+            />
+            <button onClick={addQuickNote} className="p-3 bg-blue-600 text-white rounded-lg">
+              <Plus size={18} />
+            </button>
           </div>
         )}
 
+        {/* Inspelningsknappar */}
         <div className="flex justify-center items-center gap-6 pb-8">
           {isRecording && (
-            <button onClick={() => setShowNoteInput(!showNoteInput)} className="p-4 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200"><StickyNote size={24} /></button>
+            <button onClick={() => setShowNoteInput(!showNoteInput)} className="p-4 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200">
+              <StickyNote size={24} />
+            </button>
           )}
-          <motion.button whileTap={{ scale: 0.9 }} onClick={handleToggle} className={`h-20 w-20 rounded-full flex items-center justify-center shadow-xl ${isRecording ? 'bg-red-500' : 'bg-blue-600'}`}>
+          <motion.button 
+            whileTap={{ scale: 0.9 }} 
+            onClick={handleToggle} 
+            className={`h-20 w-20 rounded-full flex items-center justify-center shadow-xl ${isRecording ? 'bg-red-500' : 'bg-blue-600'}`}
+          >
             {isRecording ? <Square fill="white" className="text-white" /> : <Mic fill="white" className="text-white" />}
           </motion.button>
           {isRecording && <div className="w-14" />} 
         </div>
       </div>
 
+      {/* Modals / Bottom Sheets */}
       <BottomSheet isOpen={modal === 'project'} onClose={() => setModal(null)} title="Skapa Nytt Projekt">
         <div className="flex flex-col gap-4">
-          <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Projektnamn..." className="w-full bg-gray-100 border-gray-300 rounded-lg" />
-          <button onClick={handleAddProject} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">Spara Projekt</button>
+          <input 
+            type="text" 
+            value={newProjectName} 
+            onChange={e => setNewProjectName(e.target.value)} 
+            placeholder="Projektnamn..." 
+            className="w-full bg-gray-100 border-gray-300 rounded-lg p-3" 
+          />
+          <button onClick={handleAddProject} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">
+            Spara Projekt
+          </button>
         </div>
       </BottomSheet>
 
       <BottomSheet isOpen={modal === 'person'} onClose={() => setModal(null)} title="Lägg till Ny Person">
         <div className="flex flex-col gap-4">
-          <input type="text" value={newPersonName} onChange={e => setNewPersonName(e.target.value)} placeholder="Namn..." className="w-full bg-gray-100 border-gray-300 rounded-lg" />
-          <input type="text" value={newPersonRole} onChange={e => setNewPersonRole(e.target.value)} placeholder="Roll (valfritt)..." className="w-full bg-gray-100 border-gray-300 rounded-lg" />
-          <button onClick={handleAddPerson} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">Spara Person</button>
+          <input 
+            type="text" 
+            value={newPersonName} 
+            onChange={e => setNewPersonName(e.target.value)} 
+            placeholder="Namn..." 
+            className="w-full bg-gray-100 border-gray-300 rounded-lg p-3" 
+          />
+          <input 
+            type="text" 
+            value={newPersonRole} 
+            onChange={e => setNewPersonRole(e.target.value)} 
+            placeholder="Yrkestitel (eller specifik roll)..." 
+            className="w-full bg-gray-100 border-gray-300 rounded-lg p-3" 
+          />
+
+          {/* NYTT: Välj Grupp/Makt-nivå direkt om man har ett projekt valt! */}
+          {selectedProjectId && (
+            <div className="flex flex-col gap-1 mt-2">
+              <label className="text-sm font-medium text-gray-600">Roll i projektet</label>
+              <select 
+                value={newPersonGroup} 
+                onChange={e => setNewPersonGroup(e.target.value as MemberGroup)}
+                className="w-full bg-gray-100 border-gray-300 rounded-lg p-3 text-gray-800"
+              >
+                <option value={MemberGroup.STEERING}>Styrgrupp</option>
+                <option value={MemberGroup.CORE_TEAM}>Projektgrupp (Kärnteam)</option>
+                <option value={MemberGroup.REFERENCE}>Referensgrupp</option>
+                <option value={MemberGroup.STAKEHOLDER}>Intressent</option>
+                <option value={MemberGroup.OTHER}>Övrig</option>
+              </select>
+            </div>
+          )}
+
+          <button onClick={handleAddPerson} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold mt-2">
+            Spara Person
+          </button>
         </div>
       </BottomSheet>
     </>
