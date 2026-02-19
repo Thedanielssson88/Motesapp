@@ -9,11 +9,11 @@ import { seedDatabase } from './services/db';
 import { Dashboard } from './views/Dashboard';
 import { RecordView } from './views/RecordView';
 import { MeetingDetail } from './views/MeetingDetail';
+import { TasksView } from './views/TasksView';
+import { PeopleView } from './views/PeopleView';
+import { PersonDetail } from './views/PersonDetail';
+import { SettingsView } from './views/SettingsView';
 import { BottomNav } from './components/BottomNav';
-
-const Tasks = () => <div className="p-6">Här kommer Tasks-vyn (Koppla till db.tasks)</div>;
-const People = () => <div className="p-6">Här kommer CRM-vyn (Koppla till db.people)</div>;
-const Settings = () => <div className="p-6">Inställningar (API Key Input här)</div>;
 
 function App() {
   useEffect(() => { 
@@ -28,9 +28,10 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/record" element={<RecordView />} />
             <Route path="/meeting/:id" element={<MeetingDetail />} />
-            <Route path="/tasks" element={<Tasks />} />
-            <Route path="/people" element={<People />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/tasks" element={<TasksView />} />
+            <Route path="/people" element={<PeopleView />} />
+            <Route path="/person/:id" element={<PersonDetail />} />
+            <Route path="/settings" element={<SettingsView />} />
           </Routes>
         </div>
         <BottomNav />

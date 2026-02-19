@@ -1,11 +1,12 @@
 import Dexie, { type Table } from 'dexie';
-import { Meeting, Person, Task, AudioFile } from '../types';
+import { Meeting, Person, Task, AudioFile, PersonLog } from '../types';
 
 export class MeetingDB extends Dexie {
   meetings!: Table<Meeting, string>;
   people!: Table<Person, string>;
   tasks!: Table<Task, string>;
   audioFiles!: Table<AudioFile, string>;
+  personLogs!: Table<PersonLog, string>;
 
   constructor() {
     super('RecallCRM');
@@ -13,7 +14,8 @@ export class MeetingDB extends Dexie {
       meetings: 'id, date, category, *participantIds',
       people: 'id, name',
       tasks: 'id, status, assignedToId, linkedMeetingId',
-      audioFiles: 'id'
+      audioFiles: 'id',
+      personLogs: 'id, personId, date'
     });
   }
 }

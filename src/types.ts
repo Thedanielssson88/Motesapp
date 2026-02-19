@@ -33,6 +33,18 @@ export interface MeetingProtocol {
   notes: string;
 }
 
+export interface PersonLog {
+  id: string;
+  personId: string;
+  date: string;
+  text: string;
+}
+
+export interface QuickNote {
+  timestamp: number;
+  text: string;
+}
+
 export interface Meeting {
   id: string;
   title: string;
@@ -45,6 +57,7 @@ export interface Meeting {
   
   transcription?: TranscriptionSegment[];
   protocol?: MeetingProtocol;
+  quickNotes?: QuickNote[];
 }
 
 export interface AudioFile {
