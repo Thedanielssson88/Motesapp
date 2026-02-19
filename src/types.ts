@@ -67,12 +67,14 @@ export interface Meeting {
   categoryId?: string; 
   subCategoryName?: string;
   participantIds: string[];
+  absentParticipantIds?: string[]; // <-- NY RAD HÄR
   description?: string;
   isProcessed: boolean;
   
   transcription?: TranscriptionSegment[];
   protocol?: MeetingProtocol;
   quickNotes?: QuickNote[];
+  speakerMap?: Record<string, string>;
 }
 
 export interface AudioFile {

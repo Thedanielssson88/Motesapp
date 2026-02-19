@@ -24,12 +24,15 @@ export const processMeetingAI = async (meetingId: string) => {
   const base64Audio = await blobToBase64(audioFile.blob);
   const peopleNames = allPeople.map(p => p.name).join(', ');
 
+  const project = meeting.projectId ? await db.projects.get(meeting.projectId) : null;
+  const category = meeting.categoryId ? await db.categories.get(meeting.categoryId) : null;
+
   const prompt = `
     Du är en professionell mötessekreterare. Analysera ljudfilen.
-    Mötestitel: ${meeting.title}. Kategori: ${meeting.category}.
+    Mötestitel: ${meeting.title}. Projekt: ${project?.name || 'Inget'}. Kategori: ${category?.name || 'Ingen'}.
     Kända personer i systemet: ${peopleNames}.
     
-    1. Transkribera ordagrant (svenska).
+    1. Transkribera ordagrant (svenska). Identifiera olika talare och märk dem som "Person 1", "Person 2", etc.
     2. Sammanfatta och lista beslut.
     3. Identifiera uppgifter (Tasks). Om en uppgift tilldelas någon av de kända personerna, använd deras exakta namn i 'assignedToName'.
   `;
@@ -124,14 +127,14 @@ export const reprocessMeetingFromText = async (meetingId: string) => {
     
   const peopleNames = allPeople.map(p => p.name).join(', ');
 
+  const project = meeting.projectId ? await db.projects.get(meeting.projectId) : null;
+  const category = meeting.categoryId ? await db.categories.get(meeting.categoryId) : null;
+
   const prompt = `
     Du är en professionell mötessekreterare. Här är en manuellt korrigerad transkribering av ett möte.
-    Mötestitel: ${meeting.title}. Kategori: ${meeting.category}.
+    Mötestitel: ${meeting.title}. Projekt: ${project?.name || 'Inget'}. Kategori: ${category?.name || 'Ingen'}.
     Kända personer i systemet (för uppgifter): ${peopleNames}.
-    
-    TRANSKRIBERING:
-    ${fullText}
-    
+
     UPPGIFT:
     1. Skriv en professionell sammanfattning av mötet.
     2. Lista alla viktiga beslut.
