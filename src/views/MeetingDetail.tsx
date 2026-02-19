@@ -21,17 +21,54 @@ export const MeetingDetail = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   
-  // NYTT STATE: Håller koll på vilket transkriberingssegment vi redigerar just nu
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   
   const audioRef = useRef<HTMLAudioElement>(null);
+  const hasAutoStartedRef = useRef(false);
 
   useEffect(() => {
+    let objectUrl: string | undefined;
     if (audioFile && audioRef.current) {
-      const url = URL.createObjectURL(audioFile.blob);
-      audioRef.current.src = url;
+      objectUrl = URL.createObjectURL(audioFile.blob);
+      audioRef.current.src = objectUrl;
+      audioRef.current.load();
+    }
+    // Clean up the object URL when the component unmounts or the file changes
+    return () => {
+        if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+        }
     }
   }, [audioFile]);
+
+  useEffect(() => {
+    // Om mötet inte är processat och vi inte har startat än
+    if (meeting && !meeting.isProcessed && !hasAutoStartedRef.current) {
+      
+      // FALL A: Vi har en ljudfil (Vanlig inspelning)
+      if (audioFile) {
+        hasAutoStartedRef.current = true;
+        handleAnalyze();
+      } 
+      // FALL B: Vi har ingen ljudfil men vi har transkribering (Manuell inmatning)
+      else if (meeting.transcription && meeting.transcription.length > 0) {
+        hasAutoStartedRef.current = true;
+        handleAutoReprocess(); // Kör analys baserat på text istället för ljud
+      }
+    }
+  }, [meeting?.isProcessed, audioFile, meeting?.transcription]);
+
+  const handleAutoReprocess = async () => {
+    setIsAnalyzing(true);
+    try {
+      await reprocessMeetingFromText(meeting!.id);
+    } catch (e) {
+      console.error(e);
+      hasAutoStartedRef.current = false;
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   if (!meeting) return <div className="p-6">Laddar...</div>;
 
@@ -58,10 +95,19 @@ export const MeetingDetail = () => {
     }
   };
 
-  const playFromTime = (timeInSeconds: number) => {
+  const playFromTime = async (timeInSeconds: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = timeInSeconds;
-      audioRef.current.play();
+      try {
+        // The play() method returns a Promise which rejects if playback fails.
+        await audioRef.current.play();
+      } catch (error) {
+        console.error("Fel vid uppspelning av ljud:", error);
+        // Alert the user with a helpful message.
+        alert(
+          "Webbläsaren blockerade uppspelningen. Prova att starta ljudet med den stora play-knappen först och klicka sedan här igen."
+        );
+      }
     }
   };
 
@@ -100,7 +146,7 @@ export const MeetingDetail = () => {
         <h1 className="text-2xl font-bold leading-tight mb-4">{meeting.title}</h1>
         
         {audioFile && (
-          <audio ref={audioRef} controls className="w-full h-10 mb-4 rounded-lg" />
+          <audio ref={audioRef} controls playsInline className="w-full h-10 mb-4 rounded-lg" />
         )}
         
         {!meeting.isProcessed && (

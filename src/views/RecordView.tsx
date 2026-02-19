@@ -51,6 +51,9 @@ export const RecordView = () => {
   const [newPersonRole, setNewPersonRole] = useState('');
   const [newPersonGroup, setNewPersonGroup] = useState<MemberGroup>(MemberGroup.CORE_TEAM);
 
+  const [isManual, setIsManual] = useState(false);
+  const [manualText, setManualText] = useState('');
+
   const navigate = useNavigate();
 
   const allPeople = useLiveQuery(() => db.people.toArray());
@@ -146,6 +149,36 @@ export const RecordView = () => {
     }
   };
 
+  const handleSaveManual = async () => {
+    if (!manualText.trim()) return;
+  
+    const id = crypto.randomUUID();
+    
+    // Vi skapar transkriberings-objektet av den råa texten
+    const transcription = [{
+      start: 0,
+      end: 0,
+      text: manualText,
+      speaker: "Inskriven text"
+    }];
+  
+    await db.meetings.add({
+      id,
+      title: title || `Manuellt möte ${new Date().toLocaleDateString()}`,
+      date: new Date().toISOString(),
+      duration: 0,
+      projectId: selectedProjectId,
+      categoryId: selectedCategoryId,
+      subCategoryName: selectedSubCategory,
+      participantIds: selectedPeople,
+      isProcessed: false, // Detta triggar auto-analysen i MeetingDetail!
+      transcription: transcription, 
+      quickNotes: []
+    });
+  
+    navigate(`/meeting/${id}`);
+  };
+
   const addQuickNote = () => {
     if (!currentNote.trim()) return;
     setQuickNotes([...quickNotes, { timestamp: duration, text: currentNote }]);
@@ -213,10 +246,19 @@ export const RecordView = () => {
         <input 
           type="text" 
           placeholder="Vad handlar mötet om?"
-          className="text-2xl font-bold placeholder-gray-300 border-none focus:ring-0 w-full mb-8 bg-transparent p-0"
+          className="text-2xl font-bold placeholder-gray-300 border-none focus:ring-0 w-full mb-4 bg-transparent p-0"
           value={title}
           onChange={e => setTitle(e.target.value)}
         />
+
+        <div className="mb-8">
+            <button 
+                onClick={() => setIsManual(true)}
+                className="flex items-center gap-2 text-blue-600 font-bold text-sm p-2 hover:bg-blue-50 rounded-lg transition-all"
+            >
+                <Plus size={16} /> Lägg till transkribering manuellt
+            </button>
+        </div>
 
         <div className="space-y-6 mb-8">
           <div className="space-y-3">
@@ -388,6 +430,23 @@ export const RecordView = () => {
                     </button>
                 ))}
             </div>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet isOpen={isManual} onClose={() => setIsManual(false)} title="Klistra in transkribering">
+        <div className="flex flex-col gap-4">
+            <textarea
+            value={manualText}
+            onChange={(e) => setManualText(e.target.value)}
+            placeholder="Klistra in texten från mötet här..."
+            className="w-full h-64 bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <button 
+            onClick={handleSaveManual}
+            className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all"
+            >
+            Spara och analysera
+            </button>
         </div>
       </BottomSheet>
     </>

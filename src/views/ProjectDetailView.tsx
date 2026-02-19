@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, addProjectMember, addCategory, removeProjectMember, deleteCategory } from '../services/db';
-import { MemberGroup } from '../types';
-import { ArrowLeft, Users, FolderTree, Trash2, Plus, UserPlus, FolderPlus, Tag } from 'lucide-react';
+import { MemberGroup, CategoryData } from '../types';
+import { ArrowLeft, Users, FolderTree, Trash2, Plus, UserPlus, FolderPlus, Tag, X } from 'lucide-react';
 import { clsx } from 'clsx';
 
 const ProjectDetailView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
 
-  // 1. Live Queries (istället för useEffect) gör att vyn uppdateras blixtsnabbt!
+  // Live Queries
   const project = useLiveQuery(() => db.projects.get(projectId!), [projectId]);
   const members = useLiveQuery(() => db.projectMembers.where({ projectId: projectId! }).toArray(), [projectId]);
   const categories = useLiveQuery(() => db.categories.where({ projectId: projectId! }).toArray(), [projectId]);
@@ -23,13 +23,15 @@ const ProjectDetailView: React.FC = () => {
   const [newMemberGroup, setNewMemberGroup] = useState<MemberGroup>(MemberGroup.CORE_TEAM);
   const [newMemberRole, setNewMemberRole] = useState('');
 
-  // Formulär-states för kategorier
+  // Formulär-state för huvudkategori
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newSubCategoryName, setNewSubCategoryName] = useState('');
+  
+  // State för att hålla koll på inmatningen av underkategorier för varje specifikt kategori-kort
+  const [subCatInputs, setSubCatInputs] = useState<Record<string, string>>({});
 
   if (!project) return <div className="p-6 text-gray-400">Laddar projekt...</div>;
 
-  // --- Handlers ---
+  // --- Handlers för Medlemmar ---
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectId || !newMemberId) return;
@@ -38,13 +40,39 @@ const ProjectDetailView: React.FC = () => {
     setNewMemberRole('');
   };
   
-  const handleAddCategory = async (e: React.FormEvent) => {
+  // --- Handlers för Kategorier ---
+  const handleAddMainCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectId || !newCategoryName) return;
-    const subCats = newSubCategoryName.split(',').map(s => s.trim()).filter(Boolean);
-    await addCategory({ projectId, name: newCategoryName, subCategories: subCats });
+    if (!projectId || !newCategoryName.trim()) return;
+    
+    // Skapar bara huvudkategorin (tomma underkategorier)
+    await addCategory({ projectId, name: newCategoryName.trim(), subCategories: [] });
     setNewCategoryName('');
-    setNewSubCategoryName('');
+  };
+
+  const handleAddSubCategory = async (cat: CategoryData) => {
+    const newVal = subCatInputs[cat.id]?.trim();
+    if (!newVal) return;
+
+    // Förhindra dubbletter
+    if (cat.subCategories.includes(newVal)) {
+      setSubCatInputs(prev => ({ ...prev, [cat.id]: '' }));
+      return;
+    }
+
+    // Uppdatera databasen med den nya underkategorin
+    await db.categories.update(cat.id, {
+      subCategories: [...cat.subCategories, newVal]
+    });
+
+    // Töm just detta inmatningsfält
+    setSubCatInputs(prev => ({ ...prev, [cat.id]: '' }));
+  };
+
+  const handleRemoveSubCategory = async (cat: CategoryData, subToRemove: string) => {
+    await db.categories.update(cat.id, {
+      subCategories: cat.subCategories.filter(sub => sub !== subToRemove)
+    });
   };
 
   // --- Design-hjälpare ---
@@ -58,7 +86,6 @@ const ProjectDetailView: React.FC = () => {
     }
   };
 
-  // Gruppera medlemmar för snyggare rendering
   const groupedMembers = members?.reduce((acc, member) => {
     if (!acc[member.group]) acc[member.group] = [];
     acc[member.group].push(member);
@@ -103,8 +130,7 @@ const ProjectDetailView: React.FC = () => {
         {/* --- FLIK: MEDLEMMAR --- */}
         {activeTab === 'members' && (
           <div className="space-y-8">
-            
-            {/* Kort: Lägg till ny medlem */}
+            {/* ... (Hela medlemskoden från tidigare) ... */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <UserPlus size={16} className="text-blue-500" /> Lägg till i projektet
@@ -146,7 +172,6 @@ const ProjectDetailView: React.FC = () => {
               </form>
             </div>
 
-            {/* Lista: Medlemmar grupperade per roll */}
             <div className="space-y-6">
               {Object.entries(groupedMembers || {}).map(([groupName, groupMembers]) => (
                 <div key={groupName} className="space-y-3">
@@ -160,7 +185,6 @@ const ProjectDetailView: React.FC = () => {
                       return (
                         <div key={member.id} className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-gray-100 transition-all hover:border-gray-200">
                           <div className="flex items-center gap-4">
-                            {/* Snygg Avatar */}
                             <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-sm">
                               {person.name.charAt(0)}
                             </div>
@@ -191,81 +215,96 @@ const ProjectDetailView: React.FC = () => {
                   </div>
                 </div>
               ))}
-
-              {(!members || members.length === 0) && (
-                <div className="text-center p-8 bg-transparent border-2 border-dashed border-gray-200 rounded-2xl">
-                  <p className="text-gray-400 text-sm">Inga medlemmar tillagda i projektet ännu.</p>
-                </div>
-              )}
             </div>
           </div>
         )}
 
         {/* --- FLIK: KATEGORIER --- */}
         {activeTab === 'categories' && (
-          <div className="space-y-8">
+          <div className="space-y-6">
             
-            {/* Kort: Lägg till kategori */}
+            {/* Kort: Lägg till BARA huvudkategori */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
                <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <FolderPlus size={16} className="text-blue-500" /> Skapa Ny Kategori
+                <FolderPlus size={16} className="text-blue-500" /> Skapa Ny Huvudkategori
               </h3>
-              <form onSubmit={handleAddCategory} className="flex flex-col gap-3">
+              <form onSubmit={handleAddMainCategory} className="flex gap-3">
                 <input 
                   type="text" 
                   value={newCategoryName} 
                   onChange={e => setNewCategoryName(e.target.value)} 
-                  placeholder="Huvudkategori (t.ex. 'Design' eller 'Sälj')" 
+                  placeholder="T.ex. 'Design' eller 'Sälj'" 
                   className="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block w-full p-3"
                   required
                 />
-                <input 
-                  type="text" 
-                  value={newSubCategoryName} 
-                  onChange={e => setNewSubCategoryName(e.target.value)} 
-                  placeholder="Underkategorier separerade med komma (t.ex. 'Skisser, Möten, Feedback')" 
-                  className="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block w-full p-3"
-                />
-                <button type="submit" disabled={!newCategoryName} className="bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm px-5 py-3 transition-colors disabled:opacity-50 flex justify-center items-center gap-2">
-                  <Plus size={18} /> Spara Kategori
+                <button type="submit" disabled={!newCategoryName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm px-5 py-3 transition-colors disabled:opacity-50 whitespace-nowrap">
+                  Skapa
                 </button>
               </form>
             </div>
 
-            {/* Lista: Kategorier */}
+            {/* Lista: Kategorier med inbyggda inmatningsfält */}
             <div className="grid grid-cols-1 gap-4">
               {categories?.map(cat => (
-                <div key={cat.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 group">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-bold text-gray-900 flex items-center gap-2">
-                      <FolderTree size={16} className="text-blue-500" /> {cat.name}
+                <div key={cat.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                  {/* Kategori Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-gray-900 flex items-center gap-2 text-lg">
+                      <FolderTree size={18} className="text-blue-500" /> {cat.name}
                     </h4>
                     <button 
                       onClick={() => deleteCategory(cat.id)} 
-                      className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Radera kategori"
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                      title="Radera hela kategorin"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={18} />
                     </button>
                   </div>
                   
-                  <div className="flex flex-wrap gap-2">
-                    {cat.subCategories.length > 0 ? (
-                      cat.subCategories.map(sub => (
-                        <span key={sub} className="bg-gray-50 border border-gray-100 text-gray-600 text-[11px] font-medium px-2.5 py-1 rounded-lg flex items-center gap-1">
-                          <Tag size={10} className="text-gray-400" /> {sub}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs text-gray-400 italic">Inga underkategorier</span>
+                  {/* Visning av Underkategorier */}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {cat.subCategories.map(sub => (
+                      <span key={sub} className="bg-gray-50 border border-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-2">
+                        <Tag size={12} className="text-gray-400" /> 
+                        {sub}
+                        <button 
+                          onClick={() => handleRemoveSubCategory(cat, sub)}
+                          className="ml-1 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </span>
+                    ))}
+                    {cat.subCategories.length === 0 && (
+                      <span className="text-xs text-gray-400 italic">Inga underkategorier än.</span>
                     )}
                   </div>
+
+                  {/* Fält för att lägga till underkategori till just DENNA kategori */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Lägg till underkategori..."
+                      value={subCatInputs[cat.id] || ''}
+                      onChange={(e) => setSubCatInputs({ ...subCatInputs, [cat.id]: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddSubCategory(cat)}
+                      className="bg-gray-50 border border-gray-200 text-sm rounded-lg px-3 py-2 w-full focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <button
+                      onClick={() => handleAddSubCategory(cat)}
+                      className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                      title="Lägg till"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+
                 </div>
               ))}
 
               {(!categories || categories.length === 0) && (
                 <div className="text-center p-8 bg-transparent border-2 border-dashed border-gray-200 rounded-2xl">
-                  <p className="text-gray-400 text-sm">Inga kategorier skapade ännu.</p>
+                  <p className="text-gray-400 text-sm">Skapa din första kategori ovan.</p>
                 </div>
               )}
             </div>

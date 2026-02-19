@@ -14,9 +14,8 @@ export interface ProjectMember {
   customRole?: string;
 }
 
-// Korrekt och slutgiltig typ för inställningar
 export interface Setting {
-  id: 'geminiApiKey' | 'aiModel'; // Endast dessa två nycklar är tillåtna
+  id: 'geminiApiKey' | 'aiModel';
   value: string;
 }
 
@@ -54,6 +53,10 @@ export interface Task {
   linkedMeetingId?: string;
   deadline?: string;
   createdAt: string;
+  originTimestamp?: number;
+  projectId?: string;
+  categoryId?: string;
+  subCategoryName?: string;
 }
 
 export interface TranscriptionSegment {
@@ -100,6 +103,7 @@ export interface Meeting {
 
 export interface AudioFile {
   id: string;
+  meetingId: string; // EXPLICIT KOPPLING
   blob: Blob;
   mimeType: string;
 }
