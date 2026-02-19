@@ -1,6 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, GenerationConfig, Content, Part } from "@google/genai";
 import { db } from "./db";
-import { MemberGroup, Task, TaskStatus } from "../types";
+import { Task, TaskStatus } from "../types";
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -17,38 +17,23 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-// --- Kärnfunktioner för AI-interaktion (omskrivna för robusthet) ---
-
-// Hämtar AI-klienten på ett säkert och asynkront sätt.
-const getAIClient = async () => {
-  const apiKeySetting = await db.settings.get('geminiApiKey');
-  const apiKey = apiKeySetting?.value;
-  if (!apiKey) {
-    console.warn("API-nyckel för Gemini saknas i databasen.");
-    return null;
-  }
+// --- SYNKRONA HJÄLPFUNKTIONER (Använder LocalStorage) ---
+const getAIClient = () => {
+  const apiKey = localStorage.getItem('GEMINI_API_KEY');
+  if (!apiKey) return null;
   return new GoogleGenAI(apiKey);
 };
 
-// Kontrollerar API-nyckelns existens asynkront.
-export const hasApiKey = async () => {
-  try {
-    const setting = await db.settings.get('geminiApiKey');
-    return !!setting?.value; // Returnerar true om nyckeln finns och inte är en tom sträng.
-  } catch (error) {
-    console.error("Fel vid kontroll av API-nyckel:", error);
-    return false;
-  }
+export const hasApiKey = () => {
+  return !!localStorage.getItem('GEMINI_API_KEY');
 };
 
-// Hämtar AI-modellens namn asynkront.
-const getModelName = async () => {
-  const modelSetting = await db.settings.get('aiModel');
-  const modelKey = modelSetting?.value || 'flash';
-  return modelKey === 'pro' ? 'gemini-1.5-pro-latest' : 'gemini-1.5-flash-latest';
+const getModelName = () => {
+  const model = localStorage.getItem('GEMINI_MODEL') || 'flash';
+  return model === 'pro' ? 'gemini-1.5-pro-latest' : 'gemini-1.5-flash-latest';
 };
 
-// Bygger upp prompten med all nödvändig kontext.
+// --- PROMPTBYGGARE OCH DATABASUPPDATERING ---
 const buildPrompt = async (meetingId: string): Promise<string> => {
   const meeting = await db.meetings.get(meetingId);
   if (!meeting) throw new Error("Mötet kunde inte hittas i databasen.");
@@ -73,89 +58,88 @@ const buildPrompt = async (meetingId: string): Promise<string> => {
     - **Deltagare och deras roller i detta projekt:** ${peopleWithRoles}
 
     **DITT UPPDRAG:**
-    Baserat på ljudfilen eller texten, utför följande uppgifter och svara ALLTID i JSON-format.
+    Baserat på ljudfilen eller texten, utför följande uppgifter och svara ALLTID i ett strikt JSON-format.
 
-    1.  **Sammanfattning (summary):** Skriv en koncis men heltäckande sammanfattning av mötets syfte, diskussioner och slutsatser. Använd mellan 3 och 6 meningar.
-    
-    2.  **Beslut (decisions):** Identifiera och lista alla konkreta beslut som fattades. Varje beslut ska vara en sträng i en array. Om inga beslut fattades, returnera en tom array. Formulera besluten tydligt och aktivt.
-
-    3.  **Uppgifter (tasks):** Identifiera och lista alla uppgifter som delegerades. Varje uppgift ska vara ett objekt i en array med fälten \\\`title\\\` (sträng), och \\\`assignedTo\\\` (sträng, namnet på den ansvarige). Matcha namnet på den ansvarige mot deltagarlistan. Om en uppgift nämns utan att en ansvarig utses, sätt \\\`assignedTo\\\` till "Okänd".
-
-    4.  **Transkribering (transcription):** Om du analyserar en ljudfil, transkribera den ordagrant. Identifiera vem som pratar och märk dem med deras namn från deltagarlistan, eller "Okänd talare".
+    1.  **transcription:** Transkribera ljudet ordagrant. Identifiera vem som pratar och märk dem med deras namn från deltagarlistan, eller "Okänd talare". Varje del av transkriberingen ska vara ett objekt med \`start\`, \`end\`, \`text\`, och \`speaker\`.
+    2.  **summary:** Skriv en koncis men heltäckande sammanfattning av mötets syfte, diskussioner och slutsatser.
+    3.  **decisions:** Identifiera och lista alla konkreta beslut som fattades. Varje beslut ska vara en sträng i en array. Om inga beslut fattades, returnera en tom array.
+    4.  **tasks:** Identifiera och lista alla uppgifter som delegerades. Varje uppgift ska vara ett objekt i en array med \`title\` (sträng) och \`assignedTo\` (sträng, namnet på den ansvarige). Matcha namnet på den ansvarige mot deltagarlistan. Om en uppgift nämns utan att en ansvarig utses, sätt \`assignedTo\` till "Okänd".
   `;
 }
 
-// --- Huvudfunktioner för export ---
-
+// --- HUVUDFUNKTIONER MED KORREKT SYNTAX ---
 export const processMeetingAI = async (meetingId: string) => {
-  const ai = await getAIClient();
+  const ai = getAIClient();
   if (!ai) throw new Error("API-nyckel saknas. Gå till inställningar för att ange en.");
 
-  const modelName = await getModelName();
+  const modelName = getModelName();
   const meeting = await db.meetings.get(meetingId);
   const audioFile = await db.audioFiles.get(meetingId);
 
   if (!meeting || !audioFile) throw new Error("Nödvändig mötes- eller ljuddata kunde inte hittas.");
+  
+  const model = ai.getGenerativeModel({ 
+    model: modelName, 
+    generationConfig: { responseMimeType: "application/json" } 
+  });
 
   const prompt = await buildPrompt(meetingId);
   const base64Audio = await blobToBase64(audioFile.blob);
+
+  const contents: Content[] = [{
+    role: 'user',
+    parts: [
+      { text: prompt },
+      { inlineData: { mimeType: audioFile.mimeType, data: base64Audio } }
+    ]
+  }];
+
+  const result = await model.generateContent({ contents });
+
+  const responseText = result.response.text();
+  const responseData = JSON.parse(responseText);
   
-  const model = ai.getGenerativeModel({ model: modelName });
-
-  const result = await model.generateContent({
-    contents: [{
-        parts: [
-            { text: prompt },
-            { inlineData: { mimeType: audioFile.mimeType, data: base64Audio } }
-        ]
-    }],
-    generationConfig: {
-      responseMimeType: "application/json",
-    }
-  });
-
-  const response = result.response;
-  const responseData = JSON.parse(response.text());
   await updateMeetingWithAIData(meetingId, responseData);
   return responseData;
 };
 
 export const reprocessMeetingFromText = async (meetingId: string) => {
-  const ai = await getAIClient();
+  const ai = getAIClient();
   if (!ai) throw new Error("API-nyckel saknas. Gå till inställningar för att ange en.");
   
-  const modelName = await getModelName();
+  const modelName = getModelName();
   const meeting = await db.meetings.get(meetingId);
 
   if (!meeting || !meeting.transcription) throw new Error("Möte eller befintlig transkribering saknas");
+  
+  const model = ai.getGenerativeModel({ 
+    model: modelName, 
+    generationConfig: { responseMimeType: "application/json" } 
+  });
 
   const prompt = await buildPrompt(meetingId);
   const fullText = meeting.transcription
     .map(t => `${t.speaker ? t.speaker + ': ' : ''}${t.text}`)
-    .join('\\n');
+    .join('\n');
 
-  const model = ai.getGenerativeModel({ model: modelName });
-
-  const result = await model.generateContent({
-    contents: [{
-        parts: [
-            { text: prompt },
-            { text: `Här är den fullständiga transkriberingen:\\n\\n${fullText}` }
-        ]
-    }],
-    generationConfig: {
-      responseMimeType: "application/json",
-    }
-  });
+  const contents: Content[] = [{
+    role: 'user',
+    parts: [
+      { text: prompt },
+      { text: `\n\n--- TRANSKRIBERING ATT ANALYSERA ---\n${fullText}` }
+    ]
+  }];
   
-  const response = result.response;
-  const responseData = JSON.parse(response.text());
-  await updateMeetingWithAIData(meetingId, responseData, false); // Reprocess, så skriv inte över transkribering
+  const result = await model.generateContent({ contents });
+  
+  const responseText = result.response.text();
+  const responseData = JSON.parse(responseText);
+
+  await updateMeetingWithAIData(meetingId, responseData, false); 
   return responseData;
 };
 
-// --- Databasuppdatering ---
-
+// --- DATABASUPPDATERING ---
 const updateMeetingWithAIData = async (meetingId: string, data: any, shouldUpdateTranscription = true) => {
   const meeting = await db.meetings.get(meetingId);
   if (!meeting) return;
@@ -185,8 +169,8 @@ const updateMeetingWithAIData = async (meetingId: string, data: any, shouldUpdat
     isProcessed: true
   };
 
-  if (shouldUpdateTranscription) {
-    updateData.transcription = data.transcription || [];
+  if (shouldUpdateTranscription && data.transcription) {
+    updateData.transcription = data.transcription;
   }
 
   await db.meetings.update(meetingId, updateData);

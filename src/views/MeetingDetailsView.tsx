@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
-// Importera de nya funktionerna från geminiService
 import { processMeetingAI, reprocessMeetingFromText, hasApiKey } from '../services/geminiService';
-import { ArrowLeft, Edit, Save, Trash, Plus, Bot, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Edit, Save, Trash, Bot, AlertTriangle, Settings } from 'lucide-react';
 
 export const MeetingDetailsView = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,10 +14,10 @@ export const MeetingDetailsView = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
   
-  // Ny state för att hålla koll på om API-nyckel finns
-  const [apiKeyExists, setApiKeyExists] = useState<boolean>(true); 
+  // KORRIGERING: Starta som `false`. Knappen är inaktiv tills vi har bekräftat att nyckeln finns.
+  const [apiKeyExists, setApiKeyExists] = useState<boolean>(false); 
 
-  const meeting = useLiveQuery(() => db.meetings.get(id), [id]);
+  const meeting = useLiveQuery(() => db.meetings.get(id!), [id]);
   const participants = useLiveQuery(() => 
     meeting ? db.people.where('id').anyOf(meeting.participantIds).toArray() : [],
     [meeting]
@@ -28,14 +27,15 @@ export const MeetingDetailsView = () => {
     [id]
   );
 
-  // Effekt för att kontrollera API-nyckeln när komponenten laddas
+  // Denna effekt körs när komponenten laddas och verifierar API-nyckeln.
+  // Först när `hasApiKey()` returnerar true kommer `apiKeyExists` att sättas till true.
   useEffect(() => {
     const checkApiKey = async () => {
       const exists = await hasApiKey();
       setApiKeyExists(exists);
     };
     checkApiKey();
-  }, []);
+  }, []); // Körs en gång när komponenten monteras
 
   useEffect(() => {
     if (meeting) {
@@ -57,7 +57,7 @@ export const MeetingDetailsView = () => {
   };
 
   const handleProcessAI = async () => {
-    if (!id || !apiKeyExists) return;
+    if (!id || !apiKeyExists) return; // Dubbelkoll för säkerhets skull
     setIsProcessing(true);
     setProcessingError(null);
     try {
@@ -94,7 +94,6 @@ export const MeetingDetailsView = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 pb-24">
-      {/* Header med Tillbaka-knapp och titel */}
       <div className="flex items-center mb-4">
         <button onClick={() => navigate(-1)} className="p-2 bg-gray-100 rounded-full mr-4">
           <ArrowLeft size={20} />
@@ -125,26 +124,24 @@ export const MeetingDetailsView = () => {
           {new Date(meeting.date).toLocaleString('sv-SE', { dateStyle: 'long', timeStyle: 'short' })} &bull; Varaktighet: {formatTime(meeting.duration)}
       </div>
 
-      {/* AI-sektion */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6">
         <div className="flex justify-between items-center">
             <h2 className="text-lg font-bold flex items-center gap-2"><Bot size={20} className="text-blue-500"/> AI-Analys</h2>
             {!meeting.isProcessed && (
-                <button onClick={handleProcessAI} disabled={isProcessing || !apiKeyExists} className="btn btn-primary btn-sm disabled:bg-gray-200">
+                <button onClick={handleProcessAI} disabled={isProcessing || !apiKeyExists} className="btn btn-primary btn-sm disabled:opacity-50 disabled:cursor-not-allowed">
                   {isProcessing ? 'Analyserar...' : 'Analysera mötet'}
                 </button>
             )}
         </div>
 
-        {/* Varning om API-nyckel saknas */}
-        {!apiKeyExists && (
+        {!apiKeyExists && !isProcessing && (
             <div className="mt-4 p-3 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-lg flex items-center gap-3 text-sm">
                 <AlertTriangle size={20} />
-                <span>API-nyckel för Gemini saknas. Gå till <a href="/settings" className="font-bold underline">Inställningar</a> för att lägga till en.</span>
+                <span>API-nyckel för Gemini saknas. Gå till <Link to="/settings" className="font-bold underline">Inställningar</Link> för att lägga till en.</span>
             </div>
         )}
 
-        {processingError && <div className="text-red-500 mt-2">Fel: {processingError}</div>}
+        {processingError && <div className="text-red-500 mt-2 text-sm">Fel: {processingError}</div>}
 
         {meeting.isProcessed ? (
           <div className="mt-4 space-y-4">
@@ -163,21 +160,19 @@ export const MeetingDetailsView = () => {
             {tasks && tasks.length > 0 && (
                 <div>
                     <h3 className="font-bold">Uppgifter</h3>
-                     {/* Lista uppgifter här... */}
+                    {/* Uppgiftslista här */}
                 </div>
             )}
-            <button onClick={handleReprocess} disabled={isProcessing} className="btn btn-secondary btn-sm mt-4">
+            <button onClick={handleReprocess} disabled={isProcessing || !apiKeyExists} className="btn btn-secondary btn-sm mt-4 disabled:opacity-50 disabled:cursor-not-allowed">
               {isProcessing ? 'Bearbetar igen...' : 'Bearbeta texten igen'}
             </button>
           </div>
         ) : (
-            <p className="text-sm text-gray-500 mt-3">Tryck på knappen för att transkribera, sammanfatta och identifiera uppgifter från ljudinspelningen.</p>
+           !apiKeyExists ? null : <p className="text-sm text-gray-500 mt-3">Tryck på knappen för att transkribera, sammanfatta och identifiera uppgifter från ljudinspelningen.</p>
         )}
       </div>
 
-      {/* Andra sektioner (Deltagare, Transkribering, etc.) */}
-      {/* ... */}
-
+      {/* Andra flikar... */}
     </div>
   );
 };
