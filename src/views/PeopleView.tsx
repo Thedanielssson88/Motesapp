@@ -22,7 +22,7 @@ export const PeopleView = () => {
             </div>
             <div>
               <h3 className="font-bold text-gray-900">{person.name}</h3>
-              <p className="text-sm text-gray-500">{person.role}</p>
+              <p className="text-sm text-gray-500">{person.title}</p>
             </div>
           </Link>
         ))}

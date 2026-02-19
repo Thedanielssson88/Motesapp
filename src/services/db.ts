@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { Meeting, Person, Task, AudioFile, PersonLog, Project, CategoryData } from '../types';
+import { Meeting, Person, Task, AudioFile, PersonLog, Project, CategoryData, ProjectMember } from '../types';
 
 export class MeetingDB extends Dexie {
   meetings!: Table<Meeting, string>;
@@ -9,17 +9,19 @@ export class MeetingDB extends Dexie {
   personLogs!: Table<PersonLog, string>;
   projects!: Table<Project, string>;
   categories!: Table<CategoryData, string>;
+  projectMembers!: Table<ProjectMember, string>;
 
   constructor() {
     super('RecallCRM');
-    this.version(1).stores({
+    this.version(2).stores({
       meetings: 'id, date, projectId, categoryId, *participantIds',
-      people: 'id, name, *projectIds',
+      people: 'id, name',
       tasks: 'id, status, assignedToId, linkedMeetingId',
       audioFiles: 'id',
       personLogs: 'id, personId, date',
       projects: 'id, name',
-      categories: 'id, projectId'
+      categories: 'id, projectId',
+      projectMembers: 'id, projectId, personId, group'
     });
   }
 }
@@ -30,9 +32,9 @@ export const seedDatabase = async () => {
   const count = await db.people.count();
   if (count === 0) {
     await db.people.bulkAdd([
-      { id: '1', name: 'Anna Andersson', role: 'Projektledare', region: 'Stockholm', avatarColor: 'bg-blue-100 text-blue-600', projectIds: [] },
-      { id: '2', name: 'Erik Ek', role: 'Utvecklare', region: 'Remote', avatarColor: 'bg-green-100 text-green-600', projectIds: [] },
-      { id: '3', name: 'Sara Svensson', role: 'Säljchef', region: 'Göteborg', avatarColor: 'bg-purple-100 text-purple-600', projectIds: [] },
+      { id: '1', name: 'Anna Andersson', title: 'Projektledare', region: 'Stockholm', avatarColor: 'bg-blue-100 text-blue-600' },
+      { id: '2', name: 'Erik Ek', title: 'Utvecklare', region: 'Remote', avatarColor: 'bg-green-100 text-green-600' },
+      { id: '3', name: 'Sara Svensson', title: 'Säljchef', region: 'Göteborg', avatarColor: 'bg-purple-100 text-purple-600' },
     ]);
   }
 };

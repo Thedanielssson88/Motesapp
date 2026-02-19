@@ -137,7 +137,10 @@ export const MeetingDetail = () => {
           <>
             {activeTab === 'protocol' && (
               <div className="space-y-6">
-                {/* Protocol content here */}
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">Sammanfattning</h3>
+                  <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{meeting.protocol?.summary}</p>
+                </div>
               </div>
             )}
 

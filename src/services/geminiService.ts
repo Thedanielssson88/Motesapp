@@ -33,8 +33,7 @@ export const processMeetingAI = async (meetingId: string) => {
     Kända personer i systemet: ${peopleNames}.
     
     1. Transkribera ordagrant (svenska). Identifiera olika talare och märk dem som "Person 1", "Person 2", etc.
-    2. Sammanfatta och lista beslut.
-    3. Identifiera uppgifter (Tasks). Om en uppgift tilldelas någon av de kända personerna, använd deras exakta namn i 'assignedToName'.
+    2. Skriv en koncis sammanfattning av mötet.
   `;
 
   const response = await ai.models.generateContent({
@@ -64,19 +63,7 @@ export const processMeetingAI = async (meetingId: string) => {
               }
             }
           },
-          summary: { type: Type.STRING },
-          decisions: { type: Type.ARRAY, items: { type: Type.STRING } },
-          tasks: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                assignedToName: { type: Type.STRING }, 
-                priority: { type: Type.STRING }
-              }
-            }
-          }
+          summary: { type: Type.STRING }
         }
       }
     }
@@ -87,24 +74,10 @@ export const processMeetingAI = async (meetingId: string) => {
   await db.meetings.update(meetingId, {
     transcription: responseData.transcription,
     protocol: {
-      summary: responseData.summary,
-      decisions: responseData.decisions,
-      notes: ""
+      summary: responseData.summary
     },
     isProcessed: true
   });
-
-  for (const t of responseData.tasks) {
-    const person = allPeople.find(p => p.name.toLowerCase().includes(t.assignedToName?.toLowerCase()));
-    await db.tasks.add({
-      id: crypto.randomUUID(),
-      title: t.title,
-      status: 'todo',
-      createdAt: new Date().toISOString(),
-      linkedMeetingId: meetingId,
-      assignedToId: person?.id
-    });
-  }
 
   return responseData;
 };
@@ -120,7 +93,6 @@ export const reprocessMeetingFromText = async (meetingId: string) => {
 
   const ai = new GoogleGenAI({ apiKey });
   
-  // Bygg ihop hela transkriberingen till en stor textsträng
   const fullText = meeting.transcription
     .map(t => `[${Math.floor(t.start/60)}:${Math.floor(t.start%60).toString().padStart(2, '0')}] ${t.speaker ? t.speaker + ': ' : ''}${t.text}`)
     .join('\n');
@@ -137,8 +109,6 @@ export const reprocessMeetingFromText = async (meetingId: string) => {
 
     UPPGIFT:
     1. Skriv en professionell sammanfattning av mötet.
-    2. Lista alla viktiga beslut.
-    3. Identifiera uppgifter (Tasks). Om en uppgift tilldelas någon av de kända personerna, använd deras exakta namn i 'assignedToName'.
   `;
 
   const response = await ai.models.generateContent({
@@ -149,19 +119,7 @@ export const reprocessMeetingFromText = async (meetingId: string) => {
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          summary: { type: Type.STRING },
-          decisions: { type: Type.ARRAY, items: { type: Type.STRING } },
-          tasks: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                assignedToName: { type: Type.STRING }, 
-                priority: { type: Type.STRING }
-              }
-            }
-          }
+          summary: { type: Type.STRING }
         }
       }
     }
@@ -169,28 +127,11 @@ export const reprocessMeetingFromText = async (meetingId: string) => {
 
   const responseData = JSON.parse(response.text);
 
-  // 1. Uppdatera protokollet
   await db.meetings.update(meetingId, {
     protocol: {
-      summary: responseData.summary,
-      decisions: responseData.decisions,
-      notes: meeting.protocol?.notes || "" // Behåll eventuella manuella anteckningar
+      summary: responseData.summary
     }
   });
-
-  // 2. Hantera nya uppgifter (Valfritt: Ta bort gamla AI-genererade uppgifter om du vill att den ska "nollställa", 
-  // men oftast är det bäst att bara lägga till de nya för att undvika att radera uppgifter användaren redan bockat av)
-  for (const t of responseData.tasks) {
-    const person = allPeople.find(p => p.name.toLowerCase().includes(t.assignedToName?.toLowerCase()));
-    await db.tasks.add({
-      id: crypto.randomUUID(),
-      title: t.title,
-      status: 'todo',
-      createdAt: new Date().toISOString(),
-      linkedMeetingId: meetingId,
-      assignedToId: person?.id
-    });
-  }
 
   return responseData;
 };

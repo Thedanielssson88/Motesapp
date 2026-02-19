@@ -42,8 +42,6 @@ export interface TranscriptionSegment {
 
 export interface MeetingProtocol {
   summary: string;
-  decisions: string[];
-  notes: string;
 }
 
 export interface PersonLog {

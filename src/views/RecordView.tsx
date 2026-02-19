@@ -170,9 +170,12 @@ export const RecordView = () => {
           <div>
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-2"><Users size={14} /><span>Deltagare</span></div>
             <div className="flex flex-wrap gap-2">
-              {people?.map(person => (
-                <button key={person.id} onClick={() => togglePerson(person.id)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${selectedPeople.includes(person.id) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{person.name}</button>
-              ))}
+              {projectMembers?.filter(pm => pm.projectId === selectedProjectId).map(pm => {
+                const person = people?.find(p => p.id === pm.personId);
+                return person ? (
+                  <button key={person.id} onClick={() => togglePerson(person.id)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${selectedPeople.includes(person.id) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{person.name}</button>
+                ) : null;
+              })}
               <button onClick={() => setModal('person')} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed text-gray-500 hover:bg-gray-50 flex items-center gap-1"><Plus size={12} /> Ny Person</button>
             </div>
           </div>
