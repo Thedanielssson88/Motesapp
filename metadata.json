@@ -1,0 +1,5 @@
+{
+  "name": "RecallCRM",
+  "description": "Smart Meeting CRM: Record, transcribe, and analyze meetings using AI to automatically extract tasks and insights.",
+  "requestFramePermissions": ["microphone"]
+}
