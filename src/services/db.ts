@@ -129,3 +129,17 @@ export async function updateProjectMember(id: string, changes: Partial<ProjectMe
 export async function removeProjectMember(id: string): Promise<void> {
   await db.projectMembers.delete(id);
 }
+
+export async function deleteMeeting(meetingId: string): Promise<void> {
+    // Vi använder en transaktion för att säkerställa att allt raderas samtidigt
+    await db.transaction('rw', db.meetings, db.audioFiles, db.tasks, async () => {
+      // 1. Ta bort själva mötet
+      await db.meetings.delete(meetingId);
+      
+      // 2. Ta bort ljudfilen (superviktigt för att spara lagringsutrymme!)
+      await db.audioFiles.delete(meetingId);
+      
+      // 3. Ta bort alla uppgifter som skapades under just detta möte
+      await db.tasks.where('linkedMeetingId').equals(meetingId).delete();
+    });
+  }

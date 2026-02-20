@@ -1,9 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../services/db';
+import { db, deleteMeeting } from '../services/db';
 import { addToQueue } from '../services/queueService';
 import { useState, useRef, useEffect } from 'react';
-import { Play, Loader2, RefreshCw, Users, Edit2, Check, ArrowLeft, Plus, Settings, Copy, Mail, FileText, Bold, Italic, Save, Tag as TagIcon, Mic } from 'lucide-react';
+import { Play, Loader2, RefreshCw, Users, Edit2, Check, ArrowLeft, Plus, Settings, Copy, Mail, FileText, Bold, Italic, Save, Tag as TagIcon, Mic, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export const MeetingDetail = () => {
@@ -55,6 +55,15 @@ export const MeetingDetail = () => {
       addToQueue(meeting.id, hasAudio ? 'audio' : 'text');
     }
   }, [meeting, audioFile, isJobActive]);
+
+  const handleDeleteMeeting = async () => {
+    if (window.confirm("Är du säker på att du vill ta bort detta möte? Inspelningen och alla tillhörande uppgifter kommer att raderas permanent.")) {
+      if (meeting) {
+        await deleteMeeting(meeting.id);
+        navigate(-1); // Skicka tillbaka användaren till föregående sida efter radering
+      }
+    }
+  };
 
   const handleStartAnalysisManual = () => {
     if (!meeting) return;
@@ -119,13 +128,19 @@ export const MeetingDetail = () => {
   return (
     <div className="min-h-screen bg-slate-50 pb-24 relative">
       <div className="bg-white p-6 pb-4 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate(-1)} className="absolute top-6 left-4 p-2 bg-gray-100 rounded-full text-gray-600">
-          <ArrowLeft size={20} />
-        </button>
-        <div className="text-center pt-8">
-          <div className="text-sm text-gray-500 mb-1">{new Date(meeting.date).toLocaleDateString()}</div>
-          <h1 className="text-2xl font-bold leading-tight mb-4">{meeting.title}</h1>
-        </div>
+          <div className="flex justify-between items-center absolute top-6 left-4 right-4">
+              <button onClick={() => navigate(-1)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
+                  <ArrowLeft size={20} />
+              </button>
+              <button onClick={handleDeleteMeeting} className="p-2 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition-colors" title="Ta bort möte">
+                  <Trash2 size={20} />
+              </button>
+          </div>
+
+          <div className="text-center pt-8">
+            <h1 className="text-2xl font-bold leading-tight mb-1">{meeting.title}</h1>
+            <div className="text-sm text-gray-500 mb-1">{new Date(meeting.date).toLocaleDateString()}</div>
+          </div>
 
         {audioFile && <audio ref={audioRef} controls playsInline className="w-full h-10 mb-4 rounded-lg" />}
 

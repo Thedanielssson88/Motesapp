@@ -8,8 +8,14 @@ import { clsx } from 'clsx';
 
 export const Dashboard = () => {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
+
+  // 1. STATES FOR FILTERS ADDED
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterProject, setFilterProject] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterSubcategory, setFilterSubcategory] = useState('');
+  const [filterTag, setFilterTag] = useState('');
 
   useEffect(() => {
     const checkApiKey = async () => {
@@ -23,32 +29,47 @@ export const Dashboard = () => {
     checkApiKey();
   }, []);
 
-  const projects = useLiveQuery(() => db.projects.toArray()) || [];
-  const meetings = useLiveQuery(() => db.meetings.orderBy('date').reverse().toArray()) || [];
-  const categories = useLiveQuery(() => db.categories.toArray()) || [];
+  const meetings = useLiveQuery(() => db.meetings.orderBy('date').reverse().toArray());
+  const people = useLiveQuery(() => db.people.toArray());
+  const projects = useLiveQuery(() => db.projects.toArray());
+  const categories = useLiveQuery(() => db.categories.toArray());
   const activeJobs = useLiveQuery(() => db.processingJobs.where('status').anyOf(['pending', 'processing']).toArray()) || [];
 
   const activeJobsCount = activeJobs.length;
 
-  const enrichedMeetings = useMemo(() => {
-    if (!meetings) return [];
-    return meetings.map(m => ({
-      ...m,
-      projectName: projects.find(p => p.id === m.projectId)?.name,
-      categoryName: categories.find(c => c.id === m.categoryId)?.name,
-    }));
-  }, [meetings, projects, categories]);
-
+  // 2. COMBINED FILTERING LOGIC
   const filteredMeetings = useMemo(() => {
-    return enrichedMeetings.filter(m => {
-      const searchMatch = !searchQuery.trim() || (
-        m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.projectName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.protocol?.summary?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      return searchMatch;
-    });
-  }, [enrichedMeetings, searchQuery]);
+    return meetings?.filter(meeting => {
+      // --- 1. DROPDOWN-FILTER ---
+      if (filterProject && meeting.projectId !== filterProject) return false;
+      if (filterCategory && meeting.categoryId !== filterCategory) return false;
+      if (filterSubcategory && meeting.subCategoryName !== filterSubcategory) return false;
+      if (filterTag && (!meeting.tagIds || !meeting.tagIds.includes(filterTag))) return false;
+
+      // --- 2. DEEP SEARCH (FRITEXT) ---
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        let matchesSearch = false;
+
+        if (meeting.title?.toLowerCase().includes(query)) matchesSearch = true;
+        else if (meeting.protocol?.summary?.toLowerCase().includes(query)) matchesSearch = true;
+        else if (meeting.protocol?.decisions?.some(d => d.toLowerCase().includes(query))) matchesSearch = true;
+        else if (meeting.transcription?.some(t => t.text.toLowerCase().includes(query) || t.speaker?.toLowerCase().includes(query))) matchesSearch = true;
+        else {
+          const meetingPeople = people?.filter(p => meeting.participantIds?.includes(p.id)) || [];
+          if (meetingPeople.some(p => p.name.toLowerCase().includes(query))) matchesSearch = true;
+        }
+
+        if (!matchesSearch) return false;
+      }
+
+      return true;
+    }).map(m => ({ // Enrich the final filtered list
+        ...m,
+        projectName: projects?.find(p => p.id === m.projectId)?.name,
+      }));
+  }, [meetings, people, projects, categories, searchQuery, filterProject, filterCategory, filterSubcategory, filterTag]);
+
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 pb-32 relative">
@@ -81,24 +102,67 @@ export const Dashboard = () => {
         </div>
       )}
 
-      <div className="relative mb-6">
-        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-          <Search className="h-5 w-5 text-gray-400" />
+      {/* 3. FILTER MENUS ADDED */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm mb-6 space-y-4 border border-gray-100">
+        <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+            <input
+                type="text"
+                placeholder="Sök i allt (titlar, transkribering, beslut...)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl p-3 pl-10 focus:ring-blue-500 focus:border-blue-500"
+            />
         </div>
-        <input 
-          type="text" 
-          className="block w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-sm shadow-sm outline-none" 
-          placeholder="Sök möten..." 
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <select 
+            value={filterProject} 
+            onChange={(e) => setFilterProject(e.target.value)}
+            className="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl p-2.5"
+            >
+            <option value="">Alla Projekt</option>
+            {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+
+            <select 
+            value={filterCategory} 
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl p-2.5"
+            >
+            <option value="">Alla Kategorier</option>
+            {categories
+                ?.filter(c => !filterProject || c.projectId === filterProject)
+                .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+            }
+            </select>
+            
+            <select 
+                value={filterSubcategory} 
+                onChange={(e) => setFilterSubcategory(e.target.value)}
+                className="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl p-2.5"
+                >
+                <option value="">Underkategori</option>
+            </select>
+
+            <select 
+                value={filterTag} 
+                onChange={(e) => setFilterTag(e.target.value)}
+                className="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl p-2.5"
+                >
+                <option value="">Tagg</option>
+            </select>
+        </div>
       </div>
 
+
       <div className="space-y-4">
-        {filteredMeetings.length === 0 ? (
+        {filteredMeetings && filteredMeetings.length === 0 ? (
           <p className="text-center text-gray-400 mt-10 text-sm italic">Inga möten hittades.</p>
         ) : (
-          filteredMeetings.map(meeting => (
+          filteredMeetings?.map(meeting => (
             <Link key={meeting.id} to={`/meeting/${meeting.id}`} className="block bg-white p-5 rounded-2xl shadow-sm border border-gray-100 transition-transform active:scale-[0.98]">
               <div className="flex justify-between items-start mb-1">
                 <div className="flex-1">
@@ -110,7 +174,6 @@ export const Dashboard = () => {
                 )}
               </div>
               
-              {/* SAMMANFATTNING TILLBAKA HÄR */}
               {meeting.protocol?.summary && (
                 <p className="text-gray-600 text-xs line-clamp-2 mt-2 leading-relaxed">
                   {meeting.protocol.summary}
@@ -126,7 +189,6 @@ export const Dashboard = () => {
         )}
       </div>
 
-      {/* FLYTANDE SPELA IN KNAPP */}
       <button 
         onClick={() => navigate('/record')}
         className="fixed bottom-24 right-6 w-16 h-16 bg-red-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-red-700 active:scale-90 transition-all z-50 border-4 border-white"
