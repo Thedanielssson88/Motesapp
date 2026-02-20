@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
 import { addToQueue } from '../services/queueService';
 import { useState, useRef, useEffect } from 'react';
-import { Play, Loader2, RefreshCw, Users, Edit2, Check, ArrowLeft, Plus, Settings, Copy, Mail, FileText, Bold, Italic, Strikethrough, Save, Tag as TagIcon, X as CloseIcon } from 'lucide-react';
+import { Play, Loader2, RefreshCw, Users, Edit2, Check, ArrowLeft, Plus, Settings, Copy, Mail, FileText, Bold, Italic, Save, Tag as TagIcon, Mic } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export const MeetingDetail = () => {
@@ -14,7 +14,6 @@ export const MeetingDetail = () => {
   const tasks = useLiveQuery(() => db.tasks.where('linkedMeetingId').equals(id!).toArray(), [id]);
   const audioFile = useLiveQuery(() => db.audioFiles.get(id!), [id]);
 
-  // Hämta det senaste aktuella jobbet för detta möte från databasen (Kös-systemet)
   const activeJobs = useLiveQuery(() => db.processingJobs.where('meetingId').equals(id!).toArray(), [id]);
   const currentJob = activeJobs?.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   const isJobActive = currentJob && (currentJob.status === 'pending' || currentJob.status === 'processing');
@@ -36,7 +35,6 @@ export const MeetingDetail = () => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // AUTO-START ANALYS OM ALDRIG KÖRT
   const hasAutoStartedRef = useRef(false);
 
   useEffect(() => {
@@ -52,9 +50,7 @@ export const MeetingDetail = () => {
   useEffect(() => {
     if (!meeting || meeting.isProcessed || isJobActive || hasAutoStartedRef.current) return;
     const hasAudio = !!audioFile;
-    const hasText = !!(meeting.transcription && meeting.transcription.length > 0);
-
-    if (hasAudio || hasText) {
+    if (hasAudio || (meeting.transcription && meeting.transcription.length > 0)) {
       hasAutoStartedRef.current = true;
       addToQueue(meeting.id, hasAudio ? 'audio' : 'text');
     }
@@ -67,7 +63,6 @@ export const MeetingDetail = () => {
 
   const handleRegenerateProtocol = async () => {
     if (!meeting) return;
-    // Sätt status till oprocessad och lägg i kön igen för att skapa nytt protokoll utifrån redigerad transkribering
     await db.meetings.update(meeting.id, { isProcessed: false });
     addToQueue(meeting.id, audioFile ? 'audio' : 'text');
     setActiveTab('protocol');
@@ -82,7 +77,7 @@ export const MeetingDetail = () => {
   const playFromTime = async (timeInSeconds: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = timeInSeconds;
-      try { await audioRef.current.play(); } catch (e) { alert("Webbläsaren blockerade uppspelningen."); }
+      try { await audioRef.current.play(); } catch (e) { console.error(e); }
     }
   };
 
@@ -120,12 +115,11 @@ export const MeetingDetail = () => {
   if (!meeting) return <div className="p-6 text-center text-gray-500">Laddar möte...</div>;
 
   const projectCategories = allCategories?.filter(c => c.projectId === meeting.projectId) || [];
-  const activeCategory = allCategories?.find(c => c.id === meeting.categoryId);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24">
+    <div className="min-h-screen bg-slate-50 pb-24 relative">
       <div className="bg-white p-6 pb-4 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate(-1)} className="absolute top-6 left-4 p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
+        <button onClick={() => navigate(-1)} className="absolute top-6 left-4 p-2 bg-gray-100 rounded-full text-gray-600">
           <ArrowLeft size={20} />
         </button>
         <div className="text-center pt-8">
@@ -135,7 +129,6 @@ export const MeetingDetail = () => {
 
         {audioFile && <audio ref={audioRef} controls playsInline className="w-full h-10 mb-4 rounded-lg" />}
 
-        {/* PROGRESS BAR FÖR BAKGRUNDSKÖN */}
         {!meeting.isProcessed && isJobActive && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mt-2">
             <div className="flex items-center justify-between mb-2">
@@ -151,26 +144,14 @@ export const MeetingDetail = () => {
           </div>
         )}
 
-        {!meeting.isProcessed && !isJobActive && currentJob?.status !== 'error' && (
-           <button onClick={handleStartAnalysisManual} className="w-full text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 shadow-md hover:shadow-lg">
-             <Play size={18} fill="currentColor" /> Skapa protokoll (Lägg i kö)
+        {!meeting.isProcessed && !isJobActive && (
+           <button onClick={handleStartAnalysisManual} className="w-full text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600">
+             <Play size={18} fill="currentColor" /> Skapa protokoll
            </button>
         )}
 
-        {!meeting.isProcessed && currentJob?.status === 'error' && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mt-2">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-bold text-red-800">Analysen misslyckades</span>
-                    <button onClick={handleStartAnalysisManual} className="flex items-center gap-2 bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm font-bold hover:bg-red-200 transition-colors shadow-sm">
-                        <RefreshCw size={14} /> Försök igen
-                    </button>
-                </div>
-                <p className="text-xs text-red-600">{currentJob.error}</p>
-            </div>
-        )}
-
         {meeting.isProcessed && (
-          <div className="flex gap-4 mt-4 border-b overflow-x-auto no-scrollbar justify-start md:justify-center">
+          <div className="flex gap-4 mt-4 border-b overflow-x-auto no-scrollbar justify-start">
             {['protocol', 'transcript', 'participants', 'settings'].map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab as any)} className={clsx("pb-2 font-medium text-sm transition-colors whitespace-nowrap", activeTab === tab ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-400")}>
                 {tab === 'protocol' ? 'Protokoll' : tab === 'transcript' ? 'Transkribering' : tab === 'participants' ? 'Deltagare' : 'Inställningar'}
@@ -181,21 +162,18 @@ export const MeetingDetail = () => {
       </div>
 
       <div className="p-6">
-        
-        {/* FLIK 1: PROTOKOLL */}
         {meeting.isProcessed && activeTab === 'protocol' && (
           <div className="space-y-6">
-            <div className="bg-blue-50/50 p-5 rounded-2xl shadow-sm border border-blue-100">
+            <div className="bg-blue-50/50 p-5 rounded-2xl border border-blue-100">
               <h3 className="text-xs font-bold text-blue-600 uppercase mb-3 flex items-center gap-2"><Check size={14} /> Sammanfattning</h3>
               <p className="text-gray-800 font-medium leading-relaxed">{meeting.protocol?.summary}</p>
             </div>
 
             <div className="bg-white rounded-2xl shadow-md border border-gray-200 relative flex flex-col">
-              <div className={clsx("p-2 border-b border-gray-100 flex items-center justify-between transition-all", isEditingProtocol ? "bg-gray-50 h-12" : "h-0 opacity-0 overflow-hidden")}>
+              <div className={clsx("p-2 border-b border-gray-100 flex items-center justify-between", isEditingProtocol ? "bg-gray-50 h-12" : "h-0 opacity-0 overflow-hidden")}>
                 <div className="flex gap-1">
                   <button onClick={() => execCommand('bold')} className="p-2 hover:bg-gray-200 rounded"><Bold size={18} /></button>
                   <button onClick={() => execCommand('italic')} className="p-2 hover:bg-gray-200 rounded"><Italic size={18} /></button>
-                  <button onClick={() => execCommand('insertUnorderedList')} className="p-2 hover:bg-gray-200 rounded text-xs font-bold">LISTA</button>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setIsEditingProtocol(false)} className="px-3 text-xs font-bold text-gray-500">Avbryt</button>
@@ -208,21 +186,17 @@ export const MeetingDetail = () => {
                   <div className="flex gap-2 mb-6">
                     <button onClick={() => setIsEditingProtocol(true)} className="px-3 py-1.5 bg-gray-100 rounded-lg text-xs font-bold flex items-center gap-2"><Edit2 size={14}/> Redigera</button>
                     <button onClick={handleCopyProtocol} className="px-3 py-1.5 border rounded-lg text-xs font-bold flex items-center gap-2">{copied ? <Check size={14}/> : <Copy size={14}/>} {copied ? 'Kopierad' : 'Kopiera'}</button>
-                    <button onClick={handleEmailProtocol} className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold border border-blue-100 flex items-center gap-2 transition-colors">
+                    <button onClick={handleEmailProtocol} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold border border-blue-100 flex items-center gap-2">
                       <Mail size={14} /> E-posta
                     </button>
                   </div>
                 )}
-                
                 <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
                     <FileText className="text-blue-600" size={20} />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Dokumenterat Protokoll</h2>
-                  </div>
+                  <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Dokumenterat Protokoll</h2>
                 </div>
-
                 <div 
                   ref={editorRef}
                   contentEditable={isEditingProtocol}
@@ -233,7 +207,7 @@ export const MeetingDetail = () => {
               </div>
             </div>
             
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <div className="bg-white p-5 rounded-2xl border border-gray-100">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Beslut & Uppgifter</h3>
               {tasks?.map(task => (
                 <div key={task.id} className="flex items-start gap-3 py-2 border-b last:border-0 border-gray-50">
@@ -241,123 +215,105 @@ export const MeetingDetail = () => {
                   <p className={clsx("text-sm font-medium", task.status === 'done' && "text-gray-400 line-through")}>{task.title}</p>
                 </div>
               ))}
-              {tasks?.length === 0 && <p className="text-sm text-gray-400 italic">Inga uppgifter hittades.</p>}
             </div>
           </div>
         )}
 
-        {/* FLIK 2: TRANSKRIBERING */}
         {meeting.isProcessed && activeTab === 'transcript' && (
            <div className="space-y-4">
              <div className="flex justify-between items-center mb-2">
-               <p className="text-xs text-gray-500">Tryck på texten för att lyssna. Tryck på pennan för att ändra.</p>
-               <button onClick={handleRegenerateProtocol} className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg text-sm font-bold hover:bg-indigo-200 transition-colors shadow-sm">
+               <p className="text-xs text-gray-500">Tryck på texten för att lyssna.</p>
+               <button onClick={handleRegenerateProtocol} className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg text-sm font-bold">
                  <RefreshCw size={14} /> Skapa nytt protokoll
                </button>
              </div>
-             
              <div className="bg-white p-4 rounded-2xl shadow-sm space-y-4">
                {meeting.transcription?.map((seg, i) => (
                  <div key={i} className="flex gap-3 group">
                    <div className="min-w-[50px] flex flex-col items-center pt-1 gap-1">
                      <span className="text-xs font-mono text-gray-400">{Math.floor(seg.start / 60)}:{Math.floor(seg.start % 60).toString().padStart(2, '0')}</span>
-                     <button onClick={() => setEditingIndex(editingIndex === i ? null : i)} className={clsx("p-1.5 rounded-md transition-all active:scale-95", editingIndex === i ? "bg-blue-100 text-blue-700" : "text-gray-400 hover:bg-gray-100 hover:text-gray-700")}>
+                     <button onClick={() => setEditingIndex(editingIndex === i ? null : i)} className="p-1.5 rounded-md text-gray-400 hover:bg-gray-100">
                        {editingIndex === i ? <Check size={14} /> : <Edit2 size={14} />}
                      </button>
                    </div>
                    <div className="flex-1">
                      {seg.speaker && <div className="text-xs font-bold text-gray-400 mb-0.5">{seg.speaker}</div>}
                      {editingIndex === i ? (
-                       <textarea autoFocus defaultValue={seg.text} onBlur={(e) => { handleTranscriptChange(i, e.target.value); setEditingIndex(null); }} className="w-full text-gray-800 text-sm leading-relaxed bg-white border-2 border-blue-400 rounded-lg p-2 resize-none shadow-sm transition-all" rows={4} />
+                       <textarea autoFocus defaultValue={seg.text} onBlur={(e) => { handleTranscriptChange(i, e.target.value); setEditingIndex(null); }} className="w-full text-gray-800 text-sm leading-relaxed bg-white border-2 border-blue-400 rounded-lg p-2" rows={4} />
                      ) : (
-                       <p onClick={() => playFromTime(seg.start)} className="text-gray-800 text-sm leading-relaxed cursor-pointer hover:bg-blue-50 p-2 rounded-lg border border-transparent transition-colors">{seg.text}</p>
+                       <p onClick={() => playFromTime(seg.start)} className="text-gray-800 text-sm leading-relaxed cursor-pointer hover:bg-blue-50 p-2 rounded-lg transition-colors">{seg.text}</p>
                      )}
                    </div>
                  </div>
                ))}
-               {(!meeting.transcription || meeting.transcription.length === 0) && (
-                 <p className="text-sm text-gray-400 italic text-center py-6">Ingen transkribering tillgänglig för detta möte.</p>
-               )}
              </div>
            </div>
         )}
 
-        {/* FLIK 3: DELTAGARE */}
         {meeting.isProcessed && activeTab === 'participants' && (
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 space-y-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2"><Users size={16}/> Närvarolista</h3>
-            
             <div className="flex gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
-              <select value={personToAdd} onChange={e => setPersonToAdd(e.target.value)} className="flex-1 bg-white border border-gray-200 text-sm rounded-lg p-2 focus:ring-blue-500">
+              <select value={personToAdd} onChange={e => setPersonToAdd(e.target.value)} className="flex-1 bg-white border border-gray-200 text-sm rounded-lg p-2">
                 <option value="">-- Lägg till saknad deltagare --</option>
                 {peopleNotInMeeting.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               <button onClick={handleAddParticipant} disabled={!personToAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg disabled:opacity-50"><Plus size={16} /></button>
             </div>
-            
-            <p className="text-xs text-gray-500 mb-2">Klicka på en person för att ändra status.</p>
-            
             <div className="grid grid-cols-1 gap-2">
               {people?.map(person => {
                 const isAbsent = meeting.absentParticipantIds?.includes(person.id);
                 return (
-                  <button key={person.id} onClick={() => toggleAttendance(person.id)} className={clsx("flex items-center justify-between p-3 rounded-xl border transition-all active:scale-[0.98]", isAbsent ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-800')}>
+                  <button key={person.id} onClick={() => toggleAttendance(person.id)} className={clsx("flex items-center justify-between p-3 rounded-xl border", isAbsent ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-800')}>
                     <div className="flex items-center gap-3">
-                      <div className={clsx("w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs", isAbsent ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800')}>
+                      <div className={clsx("w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs", isAbsent ? 'bg-red-200' : 'bg-green-200')}>
                         {person.name.charAt(0)}
                       </div>
                       <span className="font-medium text-sm">{person.name}</span>
                     </div>
-                    <span className="text-xs font-bold uppercase tracking-wide">{isAbsent ? 'Deltog ej' : 'Deltog'}</span>
+                    <span className="text-xs font-bold uppercase">{isAbsent ? 'Deltog ej' : 'Deltog'}</span>
                   </button>
                 );
               })}
-              {(!people || people.length === 0) && (
-                <div className="text-center p-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                  <p className="text-sm text-gray-400 italic">Inga personer taggades i detta möte.</p>
-                </div>
-              )}
             </div>
           </div>
         )}
 
-        {/* FLIK 4: INSTÄLLNINGAR */}
         {meeting.isProcessed && activeTab === 'settings' && (
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-6">
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 space-y-6">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2"><Settings size={16}/> Mötesinställningar</h3>
-            
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1.5">Rubrik</label>
-              <input type="text" value={meeting.title} onChange={e => db.meetings.update(meeting.id, { title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:ring-blue-500" />
+              <input type="text" value={meeting.title} onChange={e => db.meetings.update(meeting.id, { title: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm" />
             </div>
-            
+
+            {/* DATUMVÄLJARE */}
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1.5">Projekt</label>
-              <select value={meeting.projectId || ''} onChange={e => db.meetings.update(meeting.id, { projectId: e.target.value || undefined, categoryId: undefined, subCategoryName: undefined })} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:ring-blue-500">
-                <option value="">-- Inget projekt valt --</option>
-                {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1.5">Kategori</label>
-              <select value={meeting.categoryId || ''} onChange={e => db.meetings.update(meeting.id, { categoryId: e.target.value || undefined, subCategoryName: undefined })} disabled={!meeting.projectId} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:ring-blue-500 disabled:opacity-50">
-                <option value="">-- Ingen kategori vald --</option>
-                {projectCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <label className="block text-sm font-bold text-gray-700 mb-1.5">Datum</label>
+              <input 
+                type="date" 
+                value={new Date(meeting.date).toISOString().split('T')[0]} 
+                onChange={e => {
+                  const newDate = new Date(e.target.value);
+                  const oldDate = new Date(meeting.date);
+                  newDate.setHours(oldDate.getHours(), oldDate.getMinutes());
+                  db.meetings.update(meeting.id, { date: newDate.toISOString() });
+                }} 
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:ring-blue-500 outline-none" 
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1.5">Underkategori</label>
-              <select value={meeting.subCategoryName || ''} onChange={e => db.meetings.update(meeting.id, { subCategoryName: e.target.value || undefined })} disabled={!meeting.categoryId || !activeCategory?.subCategories?.length} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:ring-blue-500 disabled:opacity-50">
-                <option value="">-- Ingen underkategori vald --</option>
-                {activeCategory?.subCategories?.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+              <label className="block text-sm font-bold text-gray-700 mb-1.5">Projekt</label>
+              <select value={meeting.projectId || ''} onChange={e => db.meetings.update(meeting.id, { projectId: e.target.value || undefined })} className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm">
+                <option value="">-- Inget projekt valt --</option>
+                {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><TagIcon size={14}/> Taggar</label>
-              <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-xl border border-gray-200 min-h-[60px]">
+              <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 {projectTags?.map(tag => {
                   const isSelected = meeting.tagIds?.includes(tag.id);
                   return (
@@ -368,24 +324,24 @@ export const MeetingDetail = () => {
                         const newTags = isSelected ? currentTags.filter(tid => tid !== tag.id) : [...currentTags, tag.id];
                         db.meetings.update(meeting.id, { tagIds: newTags });
                       }}
-                      className={clsx(
-                        "px-3 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm",
-                        isSelected ? "bg-blue-600 text-white border-blue-700" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-100"
-                      )}
+                      className={clsx("px-3 py-1.5 rounded-full text-xs font-bold border", isSelected ? "bg-blue-600 text-white border-blue-700" : "bg-white text-gray-500 border-gray-200")}
                     >
                       {tag.name}
                     </button>
                   )
                 })}
-                {(!projectTags || projectTags.length === 0) && (
-                  <span className="text-sm text-gray-400 italic">Välj ett projekt för att se dess taggar.</span>
-                )}
               </div>
             </div>
-
           </div>
         )}
       </div>
+
+      <button 
+        onClick={() => navigate('/record')}
+        className="fixed bottom-24 right-6 w-14 h-14 bg-red-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-red-700 active:scale-90 z-40 border-4 border-white"
+      >
+        <Mic size={24} fill="white" />
+      </button>
     </div>
   );
 };

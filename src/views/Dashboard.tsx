@@ -1,16 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
-import { Link } from 'react-router-dom';
-import { Mic, Clock, Calendar, Search, X, AlertTriangle, Settings, Tag, Activity, Users } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Mic, Clock, Calendar, Search, AlertTriangle, Activity } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { hasApiKey } from '../services/geminiService';
 import { clsx } from 'clsx';
 
 export const Dashboard = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeProjectId, setActiveProjectId] = useState<string | 'all'>('all');
-  const [activeCategoryId, setActiveCategoryId] = useState<string | 'all'>('all');
-  const [filterTag, setFilterTag] = useState<string | 'all'>('all');
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
   useEffect(() => {
@@ -25,11 +23,9 @@ export const Dashboard = () => {
     checkApiKey();
   }, []);
 
-  // Hämta data med fallback till tomma listor för att undvika "undefined" krascher
   const projects = useLiveQuery(() => db.projects.toArray()) || [];
   const meetings = useLiveQuery(() => db.meetings.orderBy('date').reverse().toArray()) || [];
   const categories = useLiveQuery(() => db.categories.toArray()) || [];
-  const allTags = useLiveQuery(() => db.tags.toArray()) || [];
   const activeJobs = useLiveQuery(() => db.processingJobs.where('status').anyOf(['pending', 'processing']).toArray()) || [];
 
   const activeJobsCount = activeJobs.length;
@@ -45,25 +41,21 @@ export const Dashboard = () => {
 
   const filteredMeetings = useMemo(() => {
     return enrichedMeetings.filter(m => {
-      const projectMatch = activeProjectId === 'all' || m.projectId === activeProjectId;
-      const categoryMatch = activeCategoryId === 'all' || m.categoryId === activeCategoryId;
-      const tagMatch = filterTag === 'all' || m.tagIds?.includes(filterTag);
       const searchMatch = !searchQuery.trim() || (
         m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         m.projectName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.categoryName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         m.protocol?.summary?.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      return projectMatch && categoryMatch && tagMatch && searchMatch;
+      return searchMatch;
     });
-  }, [enrichedMeetings, activeProjectId, activeCategoryId, filterTag, searchQuery]);
+  }, [enrichedMeetings, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 pb-24">
+    <div className="min-h-screen bg-slate-50 p-6 pb-32 relative">
       <header className="flex justify-between items-center mb-6 pt-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Hej! 👋</h1>
-          <p className="text-gray-500 text-sm">Dags att göra stordåd.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Möten</h1>
+          <p className="text-gray-500 text-sm">Dina dokumenterade samtal.</p>
         </div>
         
         <div className="flex items-center gap-4">
@@ -79,7 +71,16 @@ export const Dashboard = () => {
         </div>
       </header>
 
-      {/* Sökfält */}
+      {isApiKeyMissing && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-xl shadow-sm flex items-start gap-3">
+          <AlertTriangle className="text-yellow-600 shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h3 className="font-bold text-yellow-800 text-sm">API-nyckel saknas</h3>
+            <p className="text-yellow-700 text-xs mt-1">Gå till inställningar för att aktivera AI.</p>
+          </div>
+        </div>
+      )}
+
       <div className="relative mb-6">
         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
           <Search className="h-5 w-5 text-gray-400" />
@@ -87,34 +88,51 @@ export const Dashboard = () => {
         <input 
           type="text" 
           className="block w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-sm shadow-sm outline-none" 
-          placeholder="Sök..." 
+          placeholder="Sök möten..." 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
       </div>
 
-      {/* Lista med möten */}
       <div className="space-y-4">
         {filteredMeetings.length === 0 ? (
-          <p className="text-center text-gray-400 mt-10 text-sm italic">Hittade inga möten...</p>
+          <p className="text-center text-gray-400 mt-10 text-sm italic">Inga möten hittades.</p>
         ) : (
           filteredMeetings.map(meeting => (
-            <Link key={meeting.id} to={`/meeting/${meeting.id}`} className="block bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-              <div className="flex justify-between items-start">
-                <h3 className="font-bold text-gray-900">{meeting.title}</h3>
+            <Link key={meeting.id} to={`/meeting/${meeting.id}`} className="block bg-white p-5 rounded-2xl shadow-sm border border-gray-100 transition-transform active:scale-[0.98]">
+              <div className="flex justify-between items-start mb-1">
+                <div className="flex-1">
+                  <h3 className="font-bold text-gray-900 leading-tight">{meeting.title}</h3>
+                  <p className="text-[10px] text-blue-600 font-bold uppercase tracking-tight mt-0.5">{meeting.projectName || 'Osorterat'}</p>
+                </div>
                 {!meeting.isProcessed && (
                    <span className="bg-yellow-100 text-yellow-700 text-[10px] font-bold px-2 py-1 rounded-full animate-pulse">I kö</span>
                 )}
               </div>
-              <p className="text-xs text-blue-600 font-bold mt-1 uppercase">{meeting.projectName || 'Osorterat'}</p>
-              <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-3">
-                 <Calendar size={12}/> {new Date(meeting.date).toLocaleDateString()}
-                 <Clock size={12}/> {Math.floor(meeting.duration / 60)} min
+              
+              {/* SAMMANFATTNING TILLBAKA HÄR */}
+              {meeting.protocol?.summary && (
+                <p className="text-gray-600 text-xs line-clamp-2 mt-2 leading-relaxed">
+                  {meeting.protocol.summary}
+                </p>
+              )}
+
+              <div className="flex items-center gap-3 text-[10px] text-gray-400 mt-4 pt-3 border-t border-gray-50">
+                 <div className="flex items-center gap-1"><Calendar size={12}/> {new Date(meeting.date).toLocaleDateString()}</div>
+                 <div className="flex items-center gap-1"><Clock size={12}/> {Math.floor(meeting.duration / 60)} min</div>
               </div>
             </Link>
           ))
         )}
       </div>
+
+      {/* FLYTANDE SPELA IN KNAPP */}
+      <button 
+        onClick={() => navigate('/record')}
+        className="fixed bottom-24 right-6 w-16 h-16 bg-red-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-red-700 active:scale-90 transition-all z-50 border-4 border-white"
+      >
+        <Mic size={28} fill="white" />
+      </button>
     </div>
   );
 };

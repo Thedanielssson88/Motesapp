@@ -7,6 +7,7 @@ import { Mic, Square, ArrowLeft, Users, StickyNote, Plus, Folder, Tag, CheckCirc
 import { motion, AnimatePresence } from 'framer-motion';
 import { QuickNote, MemberGroup, Person } from '../types';
 import { BottomSheet } from '../components/BottomSheet';
+import { Capacitor } from '@capacitor/core';
 
 const SelectionCard = ({ children, onClick, isSelected, isDisabled = false }: { children: React.ReactNode, onClick: () => void, isSelected: boolean, isDisabled?: boolean }) => (
   <motion.button
@@ -68,15 +69,12 @@ export const RecordView = () => {
   );
   const projectTags = useLiveQuery(() => selectedProjectId ? db.tags.where('projectId').equals(selectedProjectId).toArray() : Promise.resolve([]), [selectedProjectId]);
 
-
   const visiblePeople = selectedProjectId 
     ? allPeople?.filter(p => projectMembers?.some(pm => pm.personId === p.id))
     : allPeople;
 
   const peopleNotInProject = allPeople?.filter(p => !projectMembers?.some(pm => pm.personId === p.id));
 
-  // --- FIX FÖR VISUALISERAREN ---
-  // Vi måste spara referensen till requestAnimationFrame så vi kan stänga av den snyggt.
   const animationRef = useRef<number>();
 
   const drawVisualizer = () => {
@@ -84,8 +82,7 @@ export const RecordView = () => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
-    const animate = () => {
-      // Om vi inte spelar in längre, rita en platt linje
+    const animate = async () => {
       if (!isRecording) {
          if (ctx) {
              ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -97,18 +94,26 @@ export const RecordView = () => {
       
       animationRef.current = requestAnimationFrame(animate);
       
-      const data = audioRecorder.getVisualizerData();
+      let data: Uint8Array;
+      
+      if (Capacitor.isNativePlatform()) {
+        const amp = await audioRecorder.getNativeAmplitude();
+        const level = Math.floor(amp * 255);
+        data = new Uint8Array(64).fill(level);
+      } else {
+        data = audioRecorder.getVisualizerData();
+      }
+
       if (!ctx || data.length === 0) return;
       
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const barWidth = (canvas.width / data.length) * 2;
       let x = 0;
       for(let i = 0; i < data.length; i++) {
-        // Om data[i] är 0 (helt tyst), gör stapeln åtminstone 2px hög så att man ser ett "streck"
         let barHeight = (data[i] / 255) * canvas.height;
         if (barHeight < 2) barHeight = 2; 
 
-        ctx.fillStyle = `rgba(59, 130, 246, ${Math.max(data[i]/255, 0.2)})`;
+        ctx.fillStyle = `rgba(59, 130, 246, ${Math.max(data[i]/255, 0.3)})`;
         ctx.beginPath();
         // @ts-ignore
         ctx.roundRect(x, (canvas.height - barHeight) / 2, barWidth - 2, barHeight, 5);
@@ -117,7 +122,6 @@ export const RecordView = () => {
       }
     };
     
-    // Starta loopen
     animate();
   };
 
@@ -125,9 +129,8 @@ export const RecordView = () => {
     let interval: any;
     if (isRecording) {
       interval = setInterval(() => setDuration(d => d + 1), 1000);
-      drawVisualizer(); // Starta ritandet när isRecording blir true
+      drawVisualizer();
     } else {
-       // Rita flat-line när vi stannar
        drawVisualizer();
     }
     
@@ -153,14 +156,12 @@ export const RecordView = () => {
     }
   };
 
-  // --- UPPDATERAD TOGGLE MED FELHANTERING ---
   const handleToggle = async () => {
     if (!isRecording) {
       try {
         await audioRecorder.start();
         setIsRecording(true);
       } catch (error: any) {
-        // HÄR FÅNGAR VI FELET FRÅN AUDIORECORDER!
         alert("Kunde inte starta mikrofonen:\n\n" + error.message);
         setIsRecording(false);
       }
@@ -295,7 +296,7 @@ export const RecordView = () => {
     await addProjectMember(selectedProjectId, personId, MemberGroup.CORE_TEAM, '');
     togglePerson(personId);
     setModal(null);
-  }
+  };
 
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60);
@@ -442,7 +443,6 @@ export const RecordView = () => {
 
           <div className="flex justify-between items-center w-full max-w-md">
             
-            {/* VÄNSTER: Avbryt-knapp */}
             <button 
               onClick={() => isRecording ? handleCancelRecording() : navigate(-1)} 
               className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 font-bold text-sm transition-colors w-[110px]"
@@ -450,7 +450,6 @@ export const RecordView = () => {
               {isRecording ? <Trash2 size={18} /> : <X size={18} />} Avbryt
             </button>
 
-            {/* MITTEN: Spela in / Stoppa */}
             <motion.button 
               whileTap={{ scale: 0.9 }} 
               onClick={handleToggle} 
@@ -459,7 +458,6 @@ export const RecordView = () => {
               {isRecording ? <Square fill="white" className="text-white" /> : <Mic fill="white" className="text-white" />}
             </motion.button>
             
-            {/* HÖGER: Anteckning */}
             {isRecording ? (
               <button 
                 onClick={() => setShowNoteInput(!showNoteInput)} 
@@ -502,7 +500,7 @@ export const RecordView = () => {
             type="text" 
             value={newPersonRole} 
             onChange={e => setNewPersonRole(e.target.value)} 
-            placeholder="Yrkestitel (eller specifik roll)..." 
+            placeholder="Yrkestitel..." 
             className="w-full bg-gray-100 border-gray-300 rounded-lg p-3" 
           />
           {selectedProjectId && (
@@ -514,7 +512,7 @@ export const RecordView = () => {
                 className="w-full bg-gray-100 border-gray-300 rounded-lg p-3 text-gray-800"
               >
                 <option value={MemberGroup.STEERING}>Styrgrupp</option>
-                <option value={MemberGroup.CORE_TEAM}>Projektgrupp (Kärnteam)</option>
+                <option value={MemberGroup.CORE_TEAM}>Projektgrupp</option>
                 <option value={MemberGroup.REFERENCE}>Referensgrupp</option>
                 <option value={MemberGroup.STAKEHOLDER}>Intressent</option>
                 <option value={MemberGroup.OTHER}>Övrig</option>
@@ -527,33 +525,32 @@ export const RecordView = () => {
         </div>
       </BottomSheet>
 
-      <BottomSheet isOpen={modal === 'addExistingPerson'} onClose={() => setModal(null)} title="Lägg till Person i Projekt">
+      <BottomSheet isOpen={modal === 'addExistingPerson'} onClose={() => setModal(null)} title="Lägg till Person">
         <div className="flex flex-col gap-2 p-2">
             <button onClick={() => { setModal('person')}} className="w-full text-left p-3 bg-blue-50 text-blue-700 rounded-lg font-semibold">+ Skapa ny person</button>
-            <h4 className="text-sm font-bold text-gray-500 uppercase mt-4 mb-2">Eller lägg till befintlig</h4>
-            <div className="max-h-60 overflow-y-auto">
+            <div className="max-h-60 overflow-y-auto mt-4">
                 {peopleNotInProject?.map(p => (
                     <button key={p.id} onClick={() => handleAddExistingPersonToProject(p.id)} className="w-full text-left p-3 hover:bg-gray-100 rounded-lg">
-                        {p.name} <span className="text-gray-500 text-xs">({p.role})</span>
+                        {p.name}
                     </button>
                 ))}
             </div>
         </div>
       </BottomSheet>
 
-      <BottomSheet isOpen={isManual} onClose={() => setIsManual(false)} title="Klistra in transkribering">
+      <BottomSheet isOpen={isManual} onClose={() => setIsManual(false)} title="Klistra in text">
         <div className="flex flex-col gap-4">
             <textarea
-            value={manualText}
-            onChange={(e) => setManualText(e.target.value)}
-            placeholder="Klistra in texten från mötet här..."
-            className="w-full h-64 bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              value={manualText}
+              onChange={(e) => setManualText(e.target.value)}
+              placeholder="Klistra in texten här..."
+              className="w-full h-64 bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             />
             <button 
-            onClick={handleSaveManual}
-            className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all"
+              onClick={handleSaveManual}
+              className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all"
             >
-            Spara och analysera
+              Spara och analysera
             </button>
         </div>
       </BottomSheet>
