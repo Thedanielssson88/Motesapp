@@ -6,41 +6,12 @@ export enum MemberGroup {
   OTHER = 'Övrig'
 }
 
-export interface ProjectMember {
-  id: string;
-  projectId: string;
-  personId: string;
-  group: MemberGroup;
-  customRole?: string;
-}
-
-export interface Setting {
-  id: 'geminiApiKey' | 'aiModel';
-  value: string;
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  color?: string;
-  definedRoles?: string[];
-}
-
-export interface CategoryData {
-  id: string;
-  projectId: string; 
-  name: string;
-  subCategories: string[];
-}
-
-export type TaskStatus = 'todo' | 'in_progress' | 'done';
-
 export interface Person {
   id: string;
   name: string;
   role: string;
   region?: string;
-  department?: string; // NY: Lade till avdelning här
+  department?: string;
   email?: string;
   avatarColor?: string;
   projectIds: string[];
@@ -49,40 +20,12 @@ export interface Person {
 export interface Task {
   id: string;
   title: string;
-  status: TaskStatus;
+  status: 'todo' | 'done';
   assignedToId?: string;
   linkedMeetingId?: string;
-  deadline?: string;
   createdAt: string;
-  originTimestamp?: number;
   projectId?: string;
-  categoryId?: string;
-  subCategoryName?: string;
-}
-
-export interface TranscriptionSegment {
-  start: number;
-  end: number;
-  text: string;
-  speaker?: string;
-}
-
-export interface MeetingProtocol {
-  summary: string;
-  detailedProtocol?: string; // NY: Fält för det utförliga protokollet
-  decisions?: string[];
-}
-
-export interface PersonLog {
-  id: string;
-  personId: string;
-  date: string;
-  text: string;
-}
-
-export interface QuickNote {
-  timestamp: number;
-  text: string;
+  originTimestamp?: number;
 }
 
 export interface Meeting {
@@ -90,29 +33,67 @@ export interface Meeting {
   title: string;
   date: string;
   duration: number;
-  projectId?: string; 
-  categoryId?: string; 
+  projectId?: string;
+  categoryId?: string;
   subCategoryName?: string;
   participantIds: string[];
   absentParticipantIds?: string[];
-  description?: string;
-  isProcessed: boolean;
-  transcription?: TranscriptionSegment[];
-  protocol?: MeetingProtocol;
-  quickNotes?: QuickNote[];
-  speakerMap?: Record<string, string>;
   tagIds?: string[];
-}
-
-export interface AudioFile {
-  id: string;
-  meetingId: string; // EXPLICIT KOPPLING
-  blob: Blob;
-  mimeType: string;
+  isProcessed: boolean;
+  transcription?: { start: number; end: number; text: string; speaker?: string }[];
+  protocol?: {
+    summary: string;
+    detailedProtocol?: string;
+    decisions?: string[];
+  };
+  quickNotes?: { timestamp: number; text: string }[];
 }
 
 export interface Tag {
   id: string;
   name: string;
-  projectId: string; // Taggarna är kopplade till projektet
+  projectId: string;
+}
+
+export interface AudioFile {
+  id: string;
+  blob: Blob;
+  mimeType: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface CategoryData {
+  id: string;
+  name: string;
+  projectId: string;
+  subCategories: string[];
+}
+
+export interface ProjectMember {
+  id: string;
+  projectId: string;
+  personId: string;
+  group: MemberGroup;
+  customRole?: string;
+}
+
+// --- NYA TYPER FÖR KÖ-SYSTEMET ---
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'error';
+
+export interface ProcessingJob {
+  id: string;
+  meetingId: string;
+  type: 'audio' | 'text';
+  status: JobStatus;
+  progress: number;
+  message?: string;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
 }
