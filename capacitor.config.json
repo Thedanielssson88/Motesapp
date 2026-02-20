@@ -1,6 +1,6 @@
 {
-  "appId": "com.example.app",
-  "appName": "react-example",
+  "appId": "com.motesapp.app",
+  "appName": "Motesapp",
   "webDir": "dist",
   "bundledWebRuntime": false
 }

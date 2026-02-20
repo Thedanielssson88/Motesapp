@@ -1,105 +1,86 @@
-import { Capacitor } from '@capacitor/core';
-import { VoiceRecorder } from 'capacitor-voice-recorder';
+import { registerPlugin, Capacitor } from '@capacitor/core';
+import { Filesystem } from '@capacitor/filesystem'; // <--- NY IMPORT
+
+// Vi registrerar pluginen manuellt
+const AudioRecorder = registerPlugin<any>('CapacitorAudioRecorder');
 
 export class AudioRecorderService {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
-  private audioContext: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
-  private dataArray: Uint8Array | null = null;
   private stream: MediaStream | null = null;
-  
+
   private isNative = Capacitor.isNativePlatform();
 
   async start(): Promise<void> {
     if (this.isNative) {
-      const hasPermission = await VoiceRecorder.hasAudioRecordingPermission();
-      if (!hasPermission.value) {
-        const request = await VoiceRecorder.requestAudioRecordingPermission();
-        if (!request.value) {
-          throw new Error("Mikrofon-behörighet nekades av telefonen.");
-        }
+      const status = await AudioRecorder.requestPermissions();
+
+      if (status.recordAudio !== 'granted') {
+        throw new Error("Mikrofon-behörighet nekades.");
       }
-      
-      await VoiceRecorder.startRecording();
-      // Vi initierar en tom array för att hålla strukturen kompatibel med visualiseringen
-      this.dataArray = new Uint8Array(128); 
+
+      await AudioRecorder.startRecording();
       console.log("Native inspelning startad!");
-
     } else {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Webbläsaren stödjer inte ljudinspelning. Kräver HTTPS.");
-      }
-
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      this.audioContext = new AudioContextClass();
-      
-      if (this.audioContext.state === 'suspended') {
-        this.audioContext.resume();
-      }
-
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.audioChunks = [];
-
-      let options = {};
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        options = { mimeType: 'audio/webm;codecs=opus' };
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        options = { mimeType: 'audio/webm' };
-      }
-
-      this.mediaRecorder = new MediaRecorder(this.stream, options);
-      this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) this.audioChunks.push(event.data);
-      };
-
-      const source = this.audioContext.createMediaStreamSource(this.stream);
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 256;
-      source.connect(this.analyser);
-      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-
-      this.mediaRecorder.start(1000);
+      this.mediaRecorder = new MediaRecorder(this.stream);
+      this.mediaRecorder.ondataavailable = (e) => this.audioChunks.push(e.data);
+      this.mediaRecorder.start();
     }
   }
 
   async stop(): Promise<Blob> {
     if (this.isNative) {
-       const result = await VoiceRecorder.stopRecording();
-       if (result.value && result.value.recordDataBase64) {
-          const res = await fetch(`data:${result.value.mimeType};base64,${result.value.recordDataBase64}`);
-          return await res.blob();
-       }
-       throw new Error("Kunde inte spara app-inspelningen.");
+      const result = await AudioRecorder.stopRecording();
+
+      // Hämta sökvägen till filen på telefonen från result.uri
+      const fileUri = result.uri;
+
+      if (!fileUri) {
+        throw new Error("Fick ingen filsökväg (URI) från telefonen.");
+      }
+
+      // Läs filen från telefonens hårddisk med Capacitor Filesystem
+      try {
+        const fileData = await Filesystem.readFile({
+          path: fileUri
+        });
+
+        // Konvertera den inlästa base64-datan till en Blob
+        const base64Data = fileData.data as string;
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+
+        // Returnera filen som m4a
+        return new Blob([byteArray], { type: 'audio/m4a' });
+
+      } catch (error: any) {
+        throw new Error("Kunde inte läsa in sparad ljudfil: " + error.message);
+      }
+
     } else {
-      return new Promise((resolve, reject) => {
-        if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') return reject();
-        this.mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(this.audioChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
-          if (this.stream) this.stream.getTracks().forEach(t => t.stop());
-          if (this.audioContext) this.audioContext.close();
-          resolve(audioBlob);
+      // WEB LOGIK
+      return new Promise((resolve) => {
+        this.mediaRecorder!.onstop = () => {
+          const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
+          this.stream?.getTracks().forEach(t => t.stop());
+          resolve(blob);
         };
-        this.mediaRecorder.stop();
+        this.mediaRecorder!.stop();
       });
     }
   }
 
-  // Hämtar data för visualisering (Webb-läge)
-  getVisualizerData(): Uint8Array {
-    if (!this.isNative && this.analyser && this.dataArray) {
-      this.analyser.getByteFrequencyData(this.dataArray);
-      return this.dataArray;
-    }
-    return new Uint8Array(0);
-  }
-
-  // NY FUNKTION FÖR APK: Hämtar rå amplitud (0.0 till 1.0)
   async getNativeAmplitude(): Promise<number> {
     if (this.isNative) {
       try {
-        const result = await VoiceRecorder.getCurrentAmplitude();
-        return result.value; // Detta är det faktiska värdet från mikrofonen
+        const result = await AudioRecorder.getCurrentAmplitude();
+        return result.value;
       } catch (e) {
         return 0;
       }
