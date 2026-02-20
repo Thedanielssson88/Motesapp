@@ -39,6 +39,7 @@ export const RecordView = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>();
   const [selectedSubCategory, setSelectedSubCategory] = useState<string | undefined>();
   const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
   const [showNoteInput, setShowNoteInput] = useState(false);
@@ -65,6 +66,8 @@ export const RecordView = () => {
     () => selectedProjectId ? db.projectMembers.where('projectId').equals(selectedProjectId).toArray() : Promise.resolve([]),
     [selectedProjectId]
   );
+  const projectTags = useLiveQuery(() => selectedProjectId ? db.tags.where('projectId').equals(selectedProjectId).toArray() : Promise.resolve([]), [selectedProjectId]);
+
 
   const visiblePeople = selectedProjectId 
     ? allPeople?.filter(p => projectMembers?.some(pm => pm.personId === p.id))
@@ -140,7 +143,8 @@ export const RecordView = () => {
           subCategoryName: selectedSubCategory,
           participantIds: selectedPeople,
           isProcessed: false,
-          quickNotes
+          quickNotes,
+          tagIds: selectedTagIds
         });
         await db.audioFiles.add({ id, blob, mimeType: blob.type });
       });
@@ -300,6 +304,25 @@ export const RecordView = () => {
                         <span className="font-semibold">{cat.name}</span>
                       </SelectionCard>
                   ))}
+                </div>
+              )}
+
+              {projectTags && projectTags.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="font-bold text-gray-700">Taggar</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {projectTags.map(tag => (
+                      <button
+                        key={tag.id}
+                        onClick={() => setSelectedTagIds(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
+                        className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${
+                          selectedTagIds.includes(tag.id) ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-200'
+                        }`}
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               

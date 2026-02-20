@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, addProjectMember, addCategory, removeProjectMember, deleteCategory } from '../services/db';
 import { MemberGroup, CategoryData } from '../types';
-import { ArrowLeft, Users, FolderTree, Trash2, Plus, UserPlus, FolderPlus, Tag, X } from 'lucide-react';
+import { ArrowLeft, Users, FolderTree, Trash2, Plus, UserPlus, FolderPlus, Tag as TagIcon, X } from 'lucide-react';
 import { clsx } from 'clsx';
 
 const ProjectDetailView: React.FC = () => {
@@ -15,6 +15,8 @@ const ProjectDetailView: React.FC = () => {
   const members = useLiveQuery(() => db.projectMembers.where({ projectId: projectId! }).toArray(), [projectId]);
   const categories = useLiveQuery(() => db.categories.where({ projectId: projectId! }).toArray(), [projectId]);
   const people = useLiveQuery(() => db.people.toArray());
+  const tags = useLiveQuery(() => db.tags.where('projectId').equals(projectId!).toArray(), [projectId]);
+
 
   const [activeTab, setActiveTab] = useState<'members' | 'categories'>('members');
 
@@ -28,8 +30,16 @@ const ProjectDetailView: React.FC = () => {
   
   // State för att hålla koll på inmatningen av underkategorier för varje specifikt kategori-kort
   const [subCatInputs, setSubCatInputs] = useState<Record<string, string>>({});
+  
+  const [newTagName, setNewTagName] = useState('');
 
   if (!project) return <div className="p-6 text-gray-400">Laddar projekt...</div>;
+
+  const addTag = async () => {
+    if (!newTagName.trim()) return;
+    await db.tags.add({ id: crypto.randomUUID(), name: newTagName.trim(), projectId: projectId! });
+    setNewTagName('');
+  };
 
   // --- Handlers för Medlemmar ---
   const handleAddMember = async (e: React.FormEvent) => {
@@ -121,7 +131,7 @@ const ProjectDetailView: React.FC = () => {
               activeTab === 'categories' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-400 hover:text-gray-600"
             )}
           >
-            <FolderTree size={16} /> Kategorier
+            <FolderTree size={16} /> Kategorier & Taggar
           </button>
         </div>
       </div>
@@ -265,7 +275,7 @@ const ProjectDetailView: React.FC = () => {
                   <div className="flex flex-wrap gap-2 mb-4">
                     {cat.subCategories.map(sub => (
                       <span key={sub} className="bg-gray-50 border border-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-2">
-                        <Tag size={12} className="text-gray-400" /> 
+                        <TagIcon size={12} className="text-gray-400" /> 
                         {sub}
                         <button 
                           onClick={() => handleRemoveSubCategory(cat, sub)}
@@ -307,6 +317,21 @@ const ProjectDetailView: React.FC = () => {
                   <p className="text-gray-400 text-sm">Skapa din första kategori ovan.</p>
                 </div>
               )}
+            </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mt-6">
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><TagIcon size={18}/> Taggar</h3>
+              <div className="flex gap-2 mb-4">
+                <input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="Ny tagg..." className="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-2 text-sm" />
+                <button onClick={addTag} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold">Lägg till</button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {tags?.map(tag => (
+                  <span key={tag.id} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2">
+                    {tag.name}
+                    <button onClick={() => db.tags.delete(tag.id)} className="hover:text-red-500">×</button>
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         )}

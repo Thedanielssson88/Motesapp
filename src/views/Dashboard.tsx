@@ -1,13 +1,16 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
 import { Link } from 'react-router-dom';
-import { Mic, Clock, Calendar, Search, X, AlertTriangle, Settings } from 'lucide-react';
+import { Mic, Clock, Calendar, Search, X, AlertTriangle, Settings, Tag } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { hasApiKey } from '../services/geminiService';
+import { clsx } from 'clsx';
 
 export const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeProjectId, setActiveProjectId] = useState<string | 'all'>('all');
+  const [activeCategoryId, setActiveCategoryId] = useState<string | 'all'>('all');
+  const [filterTag, setFilterTag] = useState<string | 'all'>('all');
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
   useEffect(() => {
@@ -21,6 +24,7 @@ export const Dashboard = () => {
   const projects = useLiveQuery(() => db.projects.toArray());
   const meetings = useLiveQuery(() => db.meetings.orderBy('date').reverse().toArray());
   const categories = useLiveQuery(() => db.categories.toArray());
+  const allTags = useLiveQuery(() => db.tags.toArray());
 
   const enrichedMeetings = useMemo(() => {
     if (!meetings || !projects || !categories) return [];
@@ -33,17 +37,18 @@ export const Dashboard = () => {
 
   const filteredMeetings = useMemo(() => {
     return enrichedMeetings.filter(m => {
-      const projectFilter = activeProjectId === 'all' || m.projectId === activeProjectId;
-      if (!searchQuery.trim()) return projectFilter;
-      const q = searchQuery.toLowerCase();
-      return projectFilter && (
-        m.title.toLowerCase().includes(q) ||
-        m.projectName?.toLowerCase().includes(q) ||
-        m.categoryName?.toLowerCase().includes(q) ||
-        m.protocol?.summary?.toLowerCase().includes(q)
+      const projectMatch = activeProjectId === 'all' || m.projectId === activeProjectId;
+      const categoryMatch = activeCategoryId === 'all' || m.categoryId === activeCategoryId;
+      const tagMatch = filterTag === 'all' || m.tagIds?.includes(filterTag);
+      const searchMatch = !searchQuery.trim() || (
+        m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.projectName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.categoryName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.protocol?.summary?.toLowerCase().includes(searchQuery.toLowerCase())
       );
+      return projectMatch && categoryMatch && tagMatch && searchMatch;
     });
-  }, [enrichedMeetings, searchQuery, activeProjectId]);
+  }, [enrichedMeetings, activeProjectId, activeCategoryId, filterTag, searchQuery]);
 
   return (
     <div className="min-h-screen bg-white p-6 pb-24">
@@ -88,13 +93,22 @@ export const Dashboard = () => {
         )}
       </div>
 
-      <div className="flex gap-2 mb-8 overflow-x-auto no-scrollbar">
+      <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar">
         <button onClick={() => setActiveProjectId('all')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeProjectId === 'all' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600'}`}>
           Alla Projekt
         </button>
         {projects?.map(p => (
           <button key={p.id} onClick={() => setActiveProjectId(p.id)} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${activeProjectId === p.id ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600'}`}>
             {p.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-2 mb-8 overflow-x-auto no-scrollbar">
+        <button onClick={() => setFilterTag('all')} className={clsx("px-3 py-1.5 rounded-full text-xs font-bold", filterTag === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500')}>Alla Taggar</button>
+        {allTags?.filter(t => activeProjectId === 'all' || t.projectId === activeProjectId).map(tag => (
+          <button key={tag.id} onClick={() => setFilterTag(tag.id)} className={clsx("px-3 py-1.5 rounded-full text-xs font-bold", filterTag === tag.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500')}>
+            {tag.name}
           </button>
         ))}
       </div>
@@ -120,6 +134,10 @@ export const Dashboard = () => {
               <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
                 <Clock size={12} /> {Math.floor(meeting.duration / 60)} min
                 {meeting.isProcessed && <span className="text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium ml-2">Analyserad</span>}
+                 {meeting.tagIds?.map(tagId => {
+                  const tag = allTags?.find(t => t.id === tagId);
+                  return tag ? <Tag key={tag.id} size={12} /> : null;
+                })}
               </div>
 
               {/* HÄR VISAS DEN KORTA SAMMANFATTNINGEN */}

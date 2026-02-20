@@ -101,6 +101,7 @@ export interface Meeting {
   protocol?: MeetingProtocol;
   quickNotes?: QuickNote[];
   speakerMap?: Record<string, string>;
+  tagIds?: string[];
 }
 
 export interface AudioFile {
@@ -108,4 +109,10 @@ export interface AudioFile {
   meetingId: string; // EXPLICIT KOPPLING
   blob: Blob;
   mimeType: string;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  projectId: string; // Taggarna är kopplade till projektet
 }

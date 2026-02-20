@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { Meeting, Person, Task, AudioFile, PersonLog, Project, CategoryData, ProjectMember, MemberGroup, Setting } from '../types';
+import { Meeting, Person, Task, AudioFile, PersonLog, Project, CategoryData, ProjectMember, MemberGroup, Setting, Tag } from '../types';
 
 export class MeetingDB extends Dexie {
   meetings!: Table<Meeting, string>;
@@ -11,6 +11,7 @@ export class MeetingDB extends Dexie {
   categories!: Table<CategoryData, string>;
   projectMembers!: Table<ProjectMember, string>;
   settings!: Table<Setting, string>;
+  tags!: Table<Tag, string>;
 
   constructor() {
     super('RecallCRM');
@@ -32,6 +33,11 @@ export class MeetingDB extends Dexie {
     // Vi lägger till 'createdAt' i slutet på tasks-tabellen så att vi kan sortera på det.
     this.version(5).stores({
       tasks: 'id, status, assignedToId, linkedMeetingId, createdAt'
+    });
+
+    this.version(6).stores({
+      tags: 'id, projectId',
+      meetings: 'id, date, projectId, categoryId, *participantIds, *tagIds'
     });
   }
 }
