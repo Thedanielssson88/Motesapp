@@ -1,11 +1,5 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { seedDatabase } from './services/db';
 import { processQueue } from './services/queueService';
@@ -21,37 +15,39 @@ import ProjectDetailView from './views/ProjectDetailView';
 import { QueueView } from './views/QueueView';
 import { BottomNav } from './components/BottomNav';
 
-// En osynlig komponent som kopplar telefonens bakåt-swipe till Reacts router
+// Vi importerar inte App direkt för att undvika krasch vid import på webben
 const HardwareBackButtonHandler = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    let listenerHandle: any = null;
+    // Om vi inte är på en mobil (Native), gör ingenting
+    if (!Capacitor.isNativePlatform()) {
+      return;
+    }
 
-    const setupBackButton = async () => {
-      // VIKTIGT: Kolla så vi faktiskt är i Android/iOS och inte i en webbläsare
-      if (Capacitor.isNativePlatform()) {
-        try {
-          listenerHandle = await CapacitorApp.addListener('backButton', () => {
-            if (location.pathname === '/') {
-              CapacitorApp.exitApp();
-            } else {
-              navigate(-1);
-            }
-          });
-        } catch (error) {
-          console.warn('Kunde inte registrera bakåt-knappen:', error);
-        }
+    let listener: any = null;
+
+    const initBackListener = async () => {
+      try {
+        // Dynamisk import för att undvika krasch på webben
+        const { App: CapApp } = await import('@capacitor/app');
+        listener = await CapApp.addListener('backButton', () => {
+          if (location.pathname === '/') {
+            CapApp.exitApp();
+          } else {
+            navigate(-1);
+          }
+        });
+      } catch (e) {
+        console.error("Backbutton handler error:", e);
       }
     };
 
-    setupBackButton();
+    initBackListener();
 
     return () => {
-      if (listenerHandle && listenerHandle.remove) {
-        listenerHandle.remove();
-      }
+      if (listener) listener.remove();
     };
   }, [location.pathname, navigate]);
 
@@ -59,15 +55,18 @@ const HardwareBackButtonHandler = () => {
 };
 
 function App() {
-  useEffect(() => { 
-    seedDatabase(); 
-    processQueue(); 
+  useEffect(() => {
+    try {
+      seedDatabase();
+      processQueue();
+    } catch (err) {
+      console.error("App startup error:", err);
+    }
   }, []);
 
   return (
     <BrowserRouter>
       <HardwareBackButtonHandler /> 
-      
       <div className="max-w-md mx-auto bg-white min-h-screen relative shadow-2xl overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto no-scrollbar">
           <Routes>
