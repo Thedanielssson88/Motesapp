@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { QuickNote, MemberGroup, Person } from '../types';
 import { BottomSheet } from '../components/BottomSheet';
 import { Capacitor } from '@capacitor/core';
+import { BackgroundMode } from '@anuradev/capacitor-background-mode';
 
 const SelectionCard = ({ children, onClick, isSelected, isDisabled = false }: { children: React.ReactNode, onClick: () => void, isSelected: boolean, isDisabled?: boolean }) => (
   <motion.button
@@ -156,42 +157,55 @@ export const RecordView = () => {
     }
   };
 
+  const handleStartRecording = async () => {
+    await BackgroundMode.enable();
+    await BackgroundMode.disableWebViewOptimizations();
+    try {
+      await audioRecorder.start();
+      setIsRecording(true);
+    } catch (error: any) {
+      alert("Kunde inte starta mikrofonen:\n\n" + error.message);
+      setIsRecording(false);
+      await BackgroundMode.disable();
+    }
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      const blob = await audioRecorder.stop();
+      setIsRecording(false);
+      const id = crypto.randomUUID();
+      
+      await db.transaction('rw', db.meetings, db.audioFiles, async () => {
+        await db.meetings.add({
+          id,
+          title: title || `Möte ${new Date().toLocaleDateString()}`,
+          date: new Date().toISOString(),
+          duration,
+          projectId: selectedProjectId,
+          categoryId: selectedCategoryId,
+          subCategoryName: selectedSubCategory,
+          participantIds: selectedPeople,
+          tagIds: selectedTagIds,
+          isProcessed: false,
+          quickNotes
+        });
+        await db.audioFiles.add({ id, blob, mimeType: blob.type });
+      });
+      navigate(`/meeting/${id}`);
+    } catch (e: any) {
+       alert("Kunde inte spara inspelningen: " + e.message);
+       setIsRecording(false);
+    } finally {
+        await BackgroundMode.disable();
+    }
+  };
+
   const handleToggle = async () => {
     if (!isRecording) {
-      try {
-        await audioRecorder.start();
-        setIsRecording(true);
-      } catch (error: any) {
-        alert("Kunde inte starta mikrofonen:\n\n" + error.message);
-        setIsRecording(false);
-      }
+      await handleStartRecording();
     } else {
-      try {
-        const blob = await audioRecorder.stop();
-        setIsRecording(false);
-        const id = crypto.randomUUID();
-        
-        await db.transaction('rw', db.meetings, db.audioFiles, async () => {
-          await db.meetings.add({
-            id,
-            title: title || `Möte ${new Date().toLocaleDateString()}`,
-            date: new Date().toISOString(),
-            duration,
-            projectId: selectedProjectId,
-            categoryId: selectedCategoryId,
-            subCategoryName: selectedSubCategory,
-            participantIds: selectedPeople,
-            tagIds: selectedTagIds,
-            isProcessed: false,
-            quickNotes
-          });
-          await db.audioFiles.add({ id, blob, mimeType: blob.type });
-        });
-        navigate(`/meeting/${id}`);
-      } catch (e: any) {
-         alert("Kunde inte spara inspelningen: " + e.message);
-         setIsRecording(false);
-      }
+      await handleStopRecording();
     }
   };
 
@@ -213,6 +227,7 @@ export const RecordView = () => {
         const ctx = canvas.getContext('2d');
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
       }
+      await BackgroundMode.disable();
     }
   };
 
