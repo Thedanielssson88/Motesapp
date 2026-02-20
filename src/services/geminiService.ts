@@ -62,7 +62,9 @@ const buildPrompt = async (meetingId: string): Promise<string> => {
      - VIKTIGT: Lägg ABSOLUT INTE in den ordagranna dialogen eller transkriberingen här!
   3. decisions: En lista med korta, tydliga beslut som togs.
   4. tasks: En lista med uppgifter i formatet { title, assignedTo }.
-  5. transcription: En ordagrann transkribering av ljudet. Detta ska vara en array där varje objekt innehåller start (sekunder), end (sekunder), text (vad som sades) och speaker (vem som sa det).`;
+  5. transcription: En ordagrann transkribering av ljudet. Detta ska vara en array där varje objekt innehåller start (sekunder), end (sekunder), text (vad som sades) och speaker (vem som sa det).
+  - Om du vet vem som pratar från sammanhanget, använd deras namn från deltagarlistan.
+  - Om du INTE vet vem som pratar, döp dem konsekvent till "Talare 1", "Talare 2" osv.`;
 }
 
 export const processMeetingAI = async (meetingId: string, onProgress?: (p: number, msg: string) => void) => {

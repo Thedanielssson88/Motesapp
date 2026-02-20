@@ -96,7 +96,20 @@ export const MeetingDetail = () => {
     updated[index].text = newText;
     db.meetings.update(meeting.id, { transcription: updated });
   };
+  const handleRenameSpeaker = (oldName: string) => {
+    if (!meeting || !meeting.transcription) return;
 
+    // Fråga användaren vem det egentligen var
+    const newName = window.prompt(`Vem är "${oldName}"? Byt namn på alla deras rader till:`, oldName);
+
+    // Om användaren skrev in ett nytt namn, uppdatera hela transkriberingen
+    if (newName && newName.trim() !== '' && newName !== oldName) {
+      const updated = meeting.transcription.map(t =>
+      t.speaker === oldName ? { ...t, speaker: newName } : t
+      );
+      db.meetings.update(meeting.id, { transcription: updated });
+    }
+  };
   const toggleAttendance = (personId: string) => {
     if (!meeting) return;
     const absent = meeting.absentParticipantIds || [];
@@ -252,7 +265,15 @@ export const MeetingDetail = () => {
                      </button>
                    </div>
                    <div className="flex-1">
-                     {seg.speaker && <div className="text-xs font-bold text-gray-400 mb-0.5">{seg.speaker}</div>}
+                   {seg.speaker && (
+                     <div
+                     onClick={() => handleRenameSpeaker(seg.speaker)}
+                     className="text-xs font-bold text-blue-600 mb-0.5 cursor-pointer hover:text-blue-800 hover:underline flex items-center gap-1 inline-flex"
+                     title="Klicka för att mappa om denna person"
+                     >
+                     <Edit2 size={10} /> {seg.speaker}
+                     </div>
+                   )}
                      {editingIndex === i ? (
                        <textarea autoFocus defaultValue={seg.text} onBlur={(e) => { handleTranscriptChange(i, e.target.value); setEditingIndex(null); }} className="w-full text-gray-800 text-sm leading-relaxed bg-white border-2 border-blue-400 rounded-lg p-2" rows={4} />
                      ) : (
