@@ -158,15 +158,22 @@ export const RecordView = () => {
   };
 
   const handleStartRecording = async () => {
-    await BackgroundMode.enable();
-    await BackgroundMode.disableWebViewOptimizations();
     try {
+      // Kör BARA bakgrundsläget om vi är på en riktig telefon
+      if (Capacitor.isNativePlatform()) {
+        await BackgroundMode.enable();
+        await BackgroundMode.disableWebViewOptimizations();
+      }
+      
       await audioRecorder.start();
       setIsRecording(true);
     } catch (error: any) {
       alert("Kunde inte starta mikrofonen:\n\n" + error.message);
       setIsRecording(false);
-      await BackgroundMode.disable();
+      
+      if (Capacitor.isNativePlatform()) {
+        try { await BackgroundMode.disable(); } catch(e) {}
+      }
     }
   };
 
@@ -197,7 +204,10 @@ export const RecordView = () => {
        alert("Kunde inte spara inspelningen: " + e.message);
        setIsRecording(false);
     } finally {
-        await BackgroundMode.disable();
+        // Stäng BARA av bakgrundsläget om vi är på en telefon
+        if (Capacitor.isNativePlatform()) {
+          try { await BackgroundMode.disable(); } catch(e) {}
+        }
     }
   };
 
@@ -227,7 +237,11 @@ export const RecordView = () => {
         const ctx = canvas.getContext('2d');
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
       }
-      await BackgroundMode.disable();
+      
+      // Stäng BARA av bakgrundsläget om vi är på en telefon
+      if (Capacitor.isNativePlatform()) {
+        try { await BackgroundMode.disable(); } catch(e) {}
+      }
     }
   };
 
