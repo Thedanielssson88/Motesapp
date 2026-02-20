@@ -3,12 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { audioRecorder } from '../services/audioRecorder';
 import { db, addProjectMember } from '../services/db';
-import { Mic, Square, ArrowLeft, Users, StickyNote, Plus, Folder, Tag, CheckCircle2 } from 'lucide-react';
+import { Mic, Square, ArrowLeft, Users, StickyNote, Plus, Folder, Tag, CheckCircle2, Trash2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QuickNote, MemberGroup, Person } from '../types';
 import { BottomSheet } from '../components/BottomSheet';
 
-// En ny komponent för valbara kort
 const SelectionCard = ({ children, onClick, isSelected, isDisabled = false }: { children: React.ReactNode, onClick: () => void, isSelected: boolean, isDisabled?: boolean }) => (
   <motion.button
     layout
@@ -149,12 +148,31 @@ export const RecordView = () => {
     }
   };
 
+  const handleCancelRecording = async () => {
+    if (window.confirm("Är du säker på att du vill avbryta? Ljudet kommer inte att sparas.")) {
+      try {
+        await audioRecorder.stop(); 
+      } catch(e) { }
+      
+      setIsRecording(false);
+      setDuration(0);
+      setQuickNotes([]);
+      setShowNoteInput(false);
+      setCurrentNote('');
+      
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+  };
+
   const handleSaveManual = async () => {
     if (!manualText.trim()) return;
   
     const id = crypto.randomUUID();
     
-    // Vi skapar transkriberings-objektet av den råa texten
     const transcription = [{
       start: 0,
       end: 0,
@@ -171,7 +189,7 @@ export const RecordView = () => {
       categoryId: selectedCategoryId,
       subCategoryName: selectedSubCategory,
       participantIds: selectedPeople,
-      isProcessed: false, // Detta triggar auto-analysen i MeetingDetail!
+      isProcessed: false, 
       transcription: transcription, 
       quickNotes: []
     });
@@ -235,7 +253,7 @@ export const RecordView = () => {
 
   return (
     <>
-      <div className="h-screen bg-gray-50 flex flex-col p-6 overflow-y-auto no-scrollbar pb-32">
+      <div className="h-screen bg-gray-50 flex flex-col p-6 overflow-y-auto no-scrollbar pb-40">
         <div className="flex items-center mb-6">
           <button onClick={() => navigate(-1)} className="p-2 bg-gray-100 rounded-full">
             <ArrowLeft size={20} />
@@ -246,19 +264,10 @@ export const RecordView = () => {
         <input 
           type="text" 
           placeholder="Vad handlar mötet om?"
-          className="text-2xl font-bold placeholder-gray-300 border-none focus:ring-0 w-full mb-4 bg-transparent p-0"
+          className="text-2xl font-bold placeholder-gray-300 border-none focus:ring-0 w-full mb-8 bg-transparent p-0"
           value={title}
           onChange={e => setTitle(e.target.value)}
         />
-
-        <div className="mb-8">
-            <button 
-                onClick={() => setIsManual(true)}
-                className="flex items-center gap-2 text-blue-600 font-bold text-sm p-2 hover:bg-blue-50 rounded-lg transition-all"
-            >
-                <Plus size={16} /> Lägg till transkribering manuellt
-            </button>
-        </div>
 
         <div className="space-y-6 mb-8">
           <div className="space-y-3">
@@ -349,20 +358,48 @@ export const RecordView = () => {
           </div>
         )}
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md p-6 flex justify-center items-center gap-6 z-50">
-          {isRecording && (
-            <button onClick={() => setShowNoteInput(!showNoteInput)} className="p-4 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200">
-              <StickyNote size={24} />
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col items-center gap-4 z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+          
+          {!isRecording && (
+            <button 
+              onClick={() => setIsManual(true)}
+              className="flex items-center justify-center gap-2 text-blue-600 font-bold text-sm px-6 py-2.5 bg-blue-50 rounded-full hover:bg-blue-100 transition-all w-full max-w-[260px]"
+            >
+              <Plus size={16} /> Lägg till transkribering manuellt
             </button>
           )}
-          <motion.button 
-            whileTap={{ scale: 0.9 }} 
-            onClick={handleToggle} 
-            className={`h-20 w-20 rounded-full flex items-center justify-center shadow-xl ${isRecording ? 'bg-red-500' : 'bg-blue-600'}`}
-          >
-            {isRecording ? <Square fill="white" className="text-white" /> : <Mic fill="white" className="text-white" />}
-          </motion.button>
-          {isRecording && <div className="w-14" />} 
+
+          <div className="flex justify-between items-center w-full max-w-md">
+            
+            {/* VÄNSTER: Avbryt-knapp (Visas nu alltid) */}
+            <button 
+              onClick={() => isRecording ? handleCancelRecording() : navigate(-1)} 
+              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 font-bold text-sm transition-colors w-[110px]"
+            >
+              {isRecording ? <Trash2 size={18} /> : <X size={18} />} Avbryt
+            </button>
+
+            {/* MITTEN: Spela in / Stoppa */}
+            <motion.button 
+              whileTap={{ scale: 0.9 }} 
+              onClick={handleToggle} 
+              className={`h-20 w-20 shrink-0 rounded-full flex items-center justify-center shadow-xl transition-colors ${isRecording ? 'bg-red-500 shadow-red-200' : 'bg-blue-600 shadow-blue-200'}`}
+            >
+              {isRecording ? <Square fill="white" className="text-white" /> : <Mic fill="white" className="text-white" />}
+            </motion.button>
+            
+            {/* HÖGER: Anteckning */}
+            {isRecording ? (
+              <button 
+                onClick={() => setShowNoteInput(!showNoteInput)} 
+                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 font-bold text-sm transition-colors w-[110px]"
+              >
+                <StickyNote size={18} /> Notis
+              </button>
+            ) : (
+               <div className="w-[110px]" />
+            )}
+          </div>
         </div>
       </div>
 

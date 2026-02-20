@@ -15,7 +15,7 @@ export class MeetingDB extends Dexie {
   constructor() {
     super('RecallCRM');
 
-    // Slutgiltig, korrekt och komplett version av schemat.
+    // Version 4 - MÅSTE VARA KVAR FÖR ATT UPPDATERINGEN SKA FUNGERA
     this.version(4).stores({
       meetings: 'id, date, projectId, categoryId, *participantIds',
       people: 'id, name, *projectIds',
@@ -26,6 +26,12 @@ export class MeetingDB extends Dexie {
       categories: 'id, projectId',
       projectMembers: 'id, projectId, personId, group',
       settings: 'id'
+    });
+
+    // Version 5 - Vår nya version! 
+    // Vi lägger till 'createdAt' i slutet på tasks-tabellen så att vi kan sortera på det.
+    this.version(5).stores({
+      tasks: 'id, status, assignedToId, linkedMeetingId, createdAt'
     });
   }
 }
@@ -109,7 +115,6 @@ export async function getProjectsForPerson(personId: string): Promise<ProjectMem
 }
 
 export async function updateProjectMember(id: string, changes: Partial<ProjectMember>): Promise<number> {
-  // KORRIGERING: db.projectmembers -> db.projectMembers
   return await db.projectMembers.update(id, changes);
 }
 

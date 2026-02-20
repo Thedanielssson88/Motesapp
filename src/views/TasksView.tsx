@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
 import { Task } from '../types';
-import { Plus, Check, Trash2, PlayCircle, Filter, X, Briefcase } from 'lucide-react';
+import { Plus, Check, Trash2, PlayCircle, Filter, Briefcase } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
 
@@ -20,12 +20,13 @@ export const TasksView: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [filterProject, setFilterProject] = useState<string | undefined>();
   const [filterCategory, setFilterCategory] = useState<string | undefined>();
+  const [filterSubcategory, setFilterSubcategory] = useState<string | undefined>(); // NYTT filter
 
   const tasks = useLiveQuery(() => db.tasks.orderBy('createdAt').reverse().toArray());
   const people = useLiveQuery(() => db.people.toArray());
   const meetings = useLiveQuery(() => db.meetings.toArray());
   const projects = useLiveQuery(() => db.projects.toArray());
-  const categories = useLiveQuery(() => filterProject ? db.categories.where({ projectId: filterProject }).toArray() : [], [filterProject]);
+  const allCategories = useLiveQuery(() => db.categories.toArray()); // Laddar alla kategorier direkt
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,26 +61,45 @@ export const TasksView: React.FC = () => {
     navigate(`/meeting/${meetingId}?tab=transcript&time=${timestamp || 0}`);
   };
 
-  const filteredTasks = useMemo(() => {
-    if (!tasks) return [];
-    return tasks.filter(task => {
-      const projectMatch = !filterProject || task.projectId === filterProject;
-      const categoryMatch = !filterCategory || task.categoryId === filterCategory;
-      return projectMatch && categoryMatch;
-    });
-  }, [tasks, filterProject, filterCategory]);
+  // 1. Berika uppgifterna så de vet vilket projekt/kategori/underkategori de tillhör via sitt möte
+  const enrichedTasks = useMemo(() => {
+    if (!tasks || !people || !meetings || !projects || !allCategories) return [];
+    
+    return tasks.map(task => {
+      const meeting = meetings.find(m => m.id === task.linkedMeetingId);
+      
+      const resolvedProjectId = task.projectId || meeting?.projectId;
+      const resolvedCategoryId = meeting?.categoryId;
+      const resolvedSubCategoryName = meeting?.subCategoryName;
 
-  const tasksWithDetails = useMemo(() => {
-    if (!filteredTasks || !people || !meetings || !projects) return [];
-    return filteredTasks.map(task => ({
-      ...task,
-      person: people.find(p => p.id === task.assignedToId),
-      meeting: meetings.find(m => m.id === task.linkedMeetingId),
-      project: projects.find(p => p.id === task.projectId),
-    }));
-  }, [filteredTasks, people, meetings, projects]);
+      return {
+        ...task,
+        resolvedProjectId,
+        resolvedCategoryId,
+        resolvedSubCategoryName,
+        person: people.find(p => p.id === task.assignedToId),
+        meeting: meeting,
+        project: projects.find(p => p.id === resolvedProjectId),
+      };
+    });
+  }, [tasks, people, meetings, projects, allCategories]);
+
+  // 2. Filtrera de berikade uppgifterna
+  const filteredTasks = useMemo(() => {
+    return enrichedTasks.filter(task => {
+      const projectMatch = !filterProject || task.resolvedProjectId === filterProject;
+      const categoryMatch = !filterCategory || task.resolvedCategoryId === filterCategory;
+      const subCategoryMatch = !filterSubcategory || task.resolvedSubCategoryName === filterSubcategory;
+      
+      return projectMatch && categoryMatch && subCategoryMatch;
+    });
+  }, [enrichedTasks, filterProject, filterCategory, filterSubcategory]);
   
-  const activeFilters = [filterProject, filterCategory].filter(Boolean).length;
+  const activeFilters = [filterProject, filterCategory, filterSubcategory].filter(Boolean).length;
+  
+  // Hjälpvariabler för dynamiska listor
+  const projectCategories = allCategories?.filter(c => c.projectId === filterProject) || [];
+  const activeCategory = allCategories?.find(c => c.id === filterCategory);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -124,20 +144,34 @@ export const TasksView: React.FC = () => {
         </div>
 
         {showFilters && (
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <select value={filterProject || ''} onChange={e => {setFilterProject(e.target.value || undefined); setFilterCategory(undefined);}} className="bg-gray-50 border border-gray-200 text-sm rounded-xl p-3 w-full">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 grid grid-cols-1 gap-3">
+            <select value={filterProject || ''} onChange={e => {
+                setFilterProject(e.target.value || undefined); 
+                setFilterCategory(undefined);
+                setFilterSubcategory(undefined);
+              }} className="bg-gray-50 border border-gray-200 text-sm rounded-xl p-3 w-full">
               <option value="">Alla Projekt</option>
               {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <select value={filterCategory || ''} onChange={e => setFilterCategory(e.target.value || undefined)} className="bg-gray-50 border border-gray-200 text-sm rounded-xl p-3 w-full" disabled={!filterProject}>
+            
+            <select value={filterCategory || ''} onChange={e => {
+                setFilterCategory(e.target.value || undefined);
+                setFilterSubcategory(undefined);
+              }} className="bg-gray-50 border border-gray-200 text-sm rounded-xl p-3 w-full" disabled={!filterProject}>
               <option value="">Alla Kategorier</option>
-              {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {projectCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+
+            {/* Visas bara om kategorin har underkategorier */}
+            <select value={filterSubcategory || ''} onChange={e => setFilterSubcategory(e.target.value || undefined)} className="bg-gray-50 border border-gray-200 text-sm rounded-xl p-3 w-full" disabled={!filterCategory || !activeCategory?.subCategories?.length}>
+              <option value="">Alla Underkategorier</option>
+              {activeCategory?.subCategories?.map(sub => <option key={sub} value={sub}>{sub}</option>)}
             </select>
           </div>
         )}
         
         <div className="space-y-3">
-          {tasksWithDetails.map(task => {
+          {filteredTasks.map(task => {
             const isDone = task.status === 'done';
             return (
               <div 
@@ -186,7 +220,7 @@ export const TasksView: React.FC = () => {
               </div>
             )
           })}
-           {tasksWithDetails.length === 0 && (
+           {filteredTasks.length === 0 && (
              <div className="text-center p-8 bg-transparent border-2 border-dashed border-gray-200 rounded-2xl">
               <p className="text-gray-400 text-sm">{activeFilters > 0 ? 'Inga uppgifter matchar ditt filter.' : 'Du har inga uppgifter. Skapa en ovan!'}</p>
             </div>

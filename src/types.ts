@@ -39,7 +39,8 @@ export interface Person {
   id: string;
   name: string;
   role: string;
-  region: string;
+  region?: string;
+  department?: string; // NY: Lade till avdelning här
   email?: string;
   avatarColor?: string;
   projectIds: string[];
@@ -68,6 +69,7 @@ export interface TranscriptionSegment {
 
 export interface MeetingProtocol {
   summary: string;
+  detailedProtocol?: string; // NY: Fält för det utförliga protokollet
   decisions?: string[];
 }
 

@@ -17,7 +17,6 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-// --- SYNKRONA HJÄLPFUNKTIONER (Använder LocalStorage) ---
 const getAIClient = () => {
   const apiKey = localStorage.getItem('GEMINI_API_KEY');
   if (!apiKey) return null;
@@ -49,6 +48,7 @@ const responseSchema = {
       }
     },
     summary: { type: Type.STRING },
+    detailedProtocol: { type: Type.STRING },
     decisions: { type: Type.ARRAY, items: { type: Type.STRING } },
     tasks: {
       type: Type.ARRAY,
@@ -75,28 +75,53 @@ const buildPrompt = async (meetingId: string): Promise<string> => {
     const pMember = projectMembers.find(pm => pm.personId === p.id);
     const roleText = pMember ? `(${pMember.group}${pMember.customRole ? ', ' + pMember.customRole : ''})` : `(${p.role || 'Deltagare'})`;
     return `${p.name} ${roleText}`;
-  }).join(', ');
+  }).join(', ') || 'Inga angivna';
+
+  const absentParticipants = meeting.absentParticipantIds ? await db.people.where('id').anyOf(meeting.absentParticipantIds).toArray() : [];
+  const absentNames = absentParticipants.map(p => p.name).join(', ') || 'Inga';
 
   return `
-    Du är en expert på att analysera och sammanfatta affärsmöten på svenska.
+    Du är en expert på att analysera och dokumentera affärsmöten. Skriv på SVENSKA.
     
     **MÖTESINFORMATION:**
     - **Titel:** ${meeting.title}
     - **Projekt:** ${project?.name || 'Ej specificerat'}
     - **Datum:** ${new Date(meeting.date).toLocaleDateString('sv-SE')}
-    - **Deltagare och deras roller i detta projekt:** ${peopleWithRoles}
+    - **Närvarande:** ${peopleWithRoles}
+    - **Deltar ej:** ${absentNames}
 
     **DITT UPPDRAG:**
-    Baserat på ljudfilen eller texten, utför följande uppgifter:
+    Skapa ett JSON-svar med följande fält:
 
-    1.  **Sammanfattning (summary):** Skriv en koncis men heltäckande sammanfattning av mötets syfte, diskussioner och slutsatser.
-    2.  **Beslut (decisions):** Identifiera och lista alla konkreta beslut som fattades.
-    3.  **Uppgifter (tasks):** Identifiera och lista alla uppgifter som delegerades. Försök matcha namnet på den ansvarige mot deltagarlistan.
-    4.  **Transkribering (transcription):** Om du analyserar en ljudfil, transkribera den ordagrant och tidsstämpla. Identifiera vem som pratar.
+    1.  **summary:** Exakt 3-5 meningar som sammanfattar mötet.
+    
+    2.  **detailedProtocol:** Ett extremt detaljerat och professionellt text-protokoll. Du MÅSTE formatera texten med HTML-taggar (<h3>, <p>, <ul>, <li>, <strong>). Följ denna mall EXAKT:
+        
+        <h3>Mötesinformation</h3>
+        <p><strong>Projekt:</strong> ${project?.name || 'Ej specificerat'}<br>
+        <strong>Mötesprotokoll:</strong> ${meeting.title}<br>
+        <strong>Närvarande:</strong> ${peopleWithRoles}<br>
+        <strong>Deltar ej:</strong> ${absentNames}</p>
+        
+        <h3>1. Mötesinnehåll</h3>
+        <p>[Skriv utförligt om vad som diskuterades här. Använd fler <h3> rubriker om det behövs för att dela upp olika ämnen, t.ex. <h3>2. Ekonomi</h3>.]</p>
+        
+        <h3>Action-lista</h3>
+        <ul>
+          <li>[Uppgift och ansvarig]</li>
+        </ul>
+        
+        <h3>Datum / Deadlines</h3>
+        <ul>
+          <li>[Datum och vad som ska ske]</li>
+        </ul>
+
+    3.  **decisions:** Array med korta strängar av beslut.
+    4.  **tasks:** Array med uppgifter { title, assignedTo }.
+    5.  **transcription:** Ordagrann transkribering med tidsstämplar (om ljud finns).
   `;
 }
 
-// --- HUVUDFUNKTIONER ---
 export const processMeetingAI = async (meetingId: string) => {
   const ai = getAIClient();
   if (!ai) throw new Error("API-nyckel saknas. Gå till inställningar.");
@@ -110,7 +135,6 @@ export const processMeetingAI = async (meetingId: string) => {
   const prompt = await buildPrompt(meetingId);
   const base64Audio = await blobToBase64(audioFile.blob);
 
-  // KORREKT SYNTAX: ai.models.generateContent
   const result = await ai.models.generateContent({
     model: modelName,
     contents: [
@@ -139,14 +163,11 @@ export const reprocessMeetingFromText = async (meetingId: string) => {
   const modelName = getModelName();
   const meeting = await db.meetings.get(meetingId);
 
-  if (!meeting || !meeting.transcription) throw new Error("Möte eller befintlig transkribering saknas");
+  if (!meeting || !meeting.transcription) throw new Error("Möte eller transkribering saknas");
 
   const prompt = await buildPrompt(meetingId);
-  const fullText = meeting.transcription
-    .map(t => `${t.speaker ? t.speaker + ': ' : ''}${t.text}`)
-    .join('\n');
+  const fullText = meeting.transcription.map(t => `${t.speaker ? t.speaker + ': ' : ''}${t.text}`).join('\n');
 
-  // KORREKT SYNTAX: ai.models.generateContent
   const result = await ai.models.generateContent({
     model: modelName,
     contents: [
@@ -192,6 +213,7 @@ const updateMeetingWithAIData = async (meetingId: string, data: any, shouldUpdat
   const updateData: Partial<any> = {
     protocol: {
       summary: data.summary || '',
+      detailedProtocol: data.detailedProtocol || '',
       decisions: data.decisions || []
     },
     isProcessed: true

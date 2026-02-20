@@ -1,61 +1,41 @@
 import { useParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
-import { ArrowLeft, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
+import { ArrowLeft, Calendar } from 'lucide-react';
 import { useState } from 'react';
 import { Meeting } from '../types';
 
-// En underkomponent för varje möte som kan expanderas
+// En underkomponent för varje möte - nu utan expander-logik
 const MeetingItem = ({ meeting }: { meeting: Meeting }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const summary = meeting.protocol?.summary || "Ingen sammanfattning tillgänglig.";
-  
-  // Vi visar bara de första 120 tecknen som förhandsvisning
-  const previewText = summary.slice(0, 120);
-  const hasMore = summary.length > 120;
 
   return (
-    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transition-all">
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 transition-all hover:shadow-md hover:border-blue-200 group">
       <div className="flex justify-between items-start mb-2">
         <div>
           <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
             <Calendar size={12} />
             {new Date(meeting.date).toLocaleDateString()}
           </div>
-          <Link to={`/meeting/${meeting.id}`} className="font-bold text-gray-800 hover:text-blue-600 transition-colors">
+          <Link to={`/meeting/${meeting.id}`} className="font-bold text-lg text-gray-800 group-hover:text-blue-600 transition-colors">
             {meeting.title}
           </Link>
         </div>
-        {hasMore && (
-          <button 
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 hover:bg-gray-100 rounded-full text-gray-400"
-          >
-            {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-          </button>
-        )}
       </div>
 
-      <div className="text-sm text-gray-600 leading-relaxed">
-        {isExpanded ? (
-          <p className="whitespace-pre-wrap">{summary}</p>
-        ) : (
-          <p>
-            {previewText}{hasMore && "..."}
-          </p>
-        )}
+      {/* HÄR VISAS DEN KORTA SAMMANFATTNINGEN I SIN HELHET */}
+      <div className="text-sm text-gray-600 leading-relaxed my-3 bg-slate-50 p-3 rounded-xl border border-gray-100">
+        <p className="whitespace-pre-wrap">{summary}</p>
       </div>
       
-      {isExpanded && (
-        <div className="mt-4 pt-3 border-t border-gray-50 flex justify-end">
-          <Link 
-            to={`/meeting/${meeting.id}`} 
-            className="text-xs font-bold text-blue-600 uppercase tracking-wider"
-          >
-            Gå till mötesdetaljer →
-          </Link>
-        </div>
-      )}
+      <div className="pt-2 flex justify-end">
+        <Link 
+          to={`/meeting/${meeting.id}`} 
+          className="text-xs font-bold text-blue-600 uppercase tracking-wider hover:text-blue-800"
+        >
+          Läs hela protokollet →
+        </Link>
+      </div>
     </div>
   );
 };
@@ -67,9 +47,11 @@ export const PersonDetail = () => {
   const projectMemberships = useLiveQuery(() => db.projectMembers.where('personId').equals(id!).toArray(), [id]);
   const meetings = useLiveQuery(() => db.meetings.where('participantIds').equals(id!).toArray(), [id]);
   const tasks = useLiveQuery(() => db.tasks.where('assignedToId').equals(id!).toArray(), [id]);
-  const [activeTab, setActiveTab] = useState<'projects' | 'meetings' | 'tasks'>('meetings'); // Ändrade till möten som default
+  const [activeTab, setActiveTab] = useState<'projects' | 'meetings' | 'tasks'>('meetings');
 
   if (!person) return <div className="p-10 text-center">Laddar...</div>;
+
+  const subTitleParts = [person.role, person.department, person.region].filter(Boolean);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -82,7 +64,7 @@ export const PersonDetail = () => {
             {person.name.charAt(0)}
           </div>
           <h1 className="text-2xl font-bold text-gray-900">{person.name}</h1>
-          <p className="text-gray-500 font-medium">{person.title} • {person.region}</p>
+          <p className="text-gray-500 font-medium">{subTitleParts.join(' • ')}</p>
         </div>
         <div className="flex gap-8 mt-6 border-b justify-center">
           {[

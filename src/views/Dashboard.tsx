@@ -105,20 +105,29 @@ export const Dashboard = () => {
 
       <section>
         <h2 className="font-bold text-lg mb-4 text-gray-800">{searchQuery ? 'Sökresultat' : 'Senaste Möten'}</h2>
-        <div className="space-y-3">
+        <div className="space-y-4">
           {filteredMeetings?.map(meeting => (
-            <Link to={`/meeting/${meeting.id}`} key={meeting.id} className="block bg-white p-4 rounded-2xl shadow-sm border border-gray-100 active:scale-[0.98] transition-transform">
+            <Link to={`/meeting/${meeting.id}`} key={meeting.id} className="block bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all group">
               <div className="flex justify-between items-start mb-2">
                 <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wide">
                   {meeting.projectName || 'Inget projekt'}
                 </span>
                 <span className="text-xs text-gray-400 flex items-center gap-1"><Calendar size={12} /> {new Date(meeting.date).toLocaleDateString()}</span>
               </div>
-              <h3 className="font-bold text-gray-900 mb-1">{meeting.title}</h3>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+              
+              <h3 className="font-bold text-lg text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">{meeting.title}</h3>
+              
+              <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
                 <Clock size={12} /> {Math.floor(meeting.duration / 60)} min
-                {meeting.isProcessed && <span className="text-green-600 bg-green-50 px-1.5 rounded ml-2">Analyserad</span>}
+                {meeting.isProcessed && <span className="text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium ml-2">Analyserad</span>}
               </div>
+
+              {/* HÄR VISAS DEN KORTA SAMMANFATTNINGEN */}
+              {meeting.protocol?.summary && (
+                <div className="text-sm text-gray-600 leading-relaxed mt-2 bg-slate-50 p-3 rounded-xl border border-gray-100">
+                  {meeting.protocol.summary}
+                </div>
+              )}
             </Link>
           ))}
           {filteredMeetings?.length === 0 && (
