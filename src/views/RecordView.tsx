@@ -75,13 +75,66 @@ export const RecordView = () => {
 
   const peopleNotInProject = allPeople?.filter(p => !projectMembers?.some(pm => pm.personId === p.id));
 
+  // --- FIX FÖR VISUALISERAREN ---
+  // Vi måste spara referensen till requestAnimationFrame så vi kan stänga av den snyggt.
+  const animationRef = useRef<number>();
+
+  const drawVisualizer = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    const animate = () => {
+      // Om vi inte spelar in längre, rita en platt linje
+      if (!isRecording) {
+         if (ctx) {
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+             ctx.fillStyle = `rgba(59, 130, 246, 0.2)`;
+             ctx.fillRect(0, canvas.height / 2 - 1, canvas.width, 2);
+         }
+         return; 
+      }
+      
+      animationRef.current = requestAnimationFrame(animate);
+      
+      const data = audioRecorder.getVisualizerData();
+      if (!ctx || data.length === 0) return;
+      
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const barWidth = (canvas.width / data.length) * 2;
+      let x = 0;
+      for(let i = 0; i < data.length; i++) {
+        // Om data[i] är 0 (helt tyst), gör stapeln åtminstone 2px hög så att man ser ett "streck"
+        let barHeight = (data[i] / 255) * canvas.height;
+        if (barHeight < 2) barHeight = 2; 
+
+        ctx.fillStyle = `rgba(59, 130, 246, ${Math.max(data[i]/255, 0.2)})`;
+        ctx.beginPath();
+        // @ts-ignore
+        ctx.roundRect(x, (canvas.height - barHeight) / 2, barWidth - 2, barHeight, 5);
+        ctx.fill();
+        x += barWidth;
+      }
+    };
+    
+    // Starta loopen
+    animate();
+  };
+
   useEffect(() => {
     let interval: any;
     if (isRecording) {
       interval = setInterval(() => setDuration(d => d + 1), 1000);
-      drawVisualizer();
+      drawVisualizer(); // Starta ritandet när isRecording blir true
+    } else {
+       // Rita flat-line när vi stannar
+       drawVisualizer();
     }
-    return () => clearInterval(interval);
+    
+    return () => {
+        clearInterval(interval);
+        if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
   }, [isRecording]);
 
   const handleSelectProject = (projectId: string) => {
@@ -90,65 +143,54 @@ export const RecordView = () => {
         setSelectedCategoryId(undefined);
         setSelectedSubCategory(undefined);
         setSelectedPeople([]);
+        setSelectedTagIds([]);
     } else {
         setSelectedProjectId(projectId);
         setSelectedCategoryId(undefined);
         setSelectedSubCategory(undefined);
         setSelectedPeople([]);
+        setSelectedTagIds([]);
     }
   };
 
-  const drawVisualizer = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const animate = () => {
-      if (!isRecording) return;
-      requestAnimationFrame(animate);
-      const data = audioRecorder.getVisualizerData();
-      if (!ctx) return;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const barWidth = (canvas.width / data.length) * 2;
-      let x = 0;
-      for(let i = 0; i < data.length; i++) {
-        const barHeight = (data[i] / 255) * canvas.height;
-        ctx.fillStyle = `rgba(59, 130, 246, ${data[i]/255 + 0.2})`;
-        ctx.beginPath();
-        // @ts-ignore
-        ctx.roundRect(x, (canvas.height - barHeight) / 2, barWidth - 2, barHeight, 5);
-        ctx.fill();
-        x += barWidth;
-      }
-    };
-    animate();
-  };
-
+  // --- UPPDATERAD TOGGLE MED FELHANTERING ---
   const handleToggle = async () => {
     if (!isRecording) {
-      await audioRecorder.start();
-      setIsRecording(true);
+      try {
+        await audioRecorder.start();
+        setIsRecording(true);
+      } catch (error: any) {
+        // HÄR FÅNGAR VI FELET FRÅN AUDIORECORDER!
+        alert("Kunde inte starta mikrofonen:\n\n" + error.message);
+        setIsRecording(false);
+      }
     } else {
-      const blob = await audioRecorder.stop();
-      setIsRecording(false);
-      const id = crypto.randomUUID();
-      
-      await db.transaction('rw', db.meetings, db.audioFiles, async () => {
-        await db.meetings.add({
-          id,
-          title: title || `Möte ${new Date().toLocaleDateString()}`,
-          date: new Date().toISOString(),
-          duration,
-          projectId: selectedProjectId,
-          categoryId: selectedCategoryId,
-          subCategoryName: selectedSubCategory,
-          participantIds: selectedPeople,
-          isProcessed: false,
-          quickNotes,
-          tagIds: selectedTagIds
+      try {
+        const blob = await audioRecorder.stop();
+        setIsRecording(false);
+        const id = crypto.randomUUID();
+        
+        await db.transaction('rw', db.meetings, db.audioFiles, async () => {
+          await db.meetings.add({
+            id,
+            title: title || `Möte ${new Date().toLocaleDateString()}`,
+            date: new Date().toISOString(),
+            duration,
+            projectId: selectedProjectId,
+            categoryId: selectedCategoryId,
+            subCategoryName: selectedSubCategory,
+            participantIds: selectedPeople,
+            tagIds: selectedTagIds,
+            isProcessed: false,
+            quickNotes
+          });
+          await db.audioFiles.add({ id, blob, mimeType: blob.type });
         });
-        await db.audioFiles.add({ id, blob, mimeType: blob.type });
-      });
-      navigate(`/meeting/${id}`);
+        navigate(`/meeting/${id}`);
+      } catch (e: any) {
+         alert("Kunde inte spara inspelningen: " + e.message);
+         setIsRecording(false);
+      }
     }
   };
 
@@ -164,6 +206,7 @@ export const RecordView = () => {
       setShowNoteInput(false);
       setCurrentNote('');
       
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
@@ -193,6 +236,7 @@ export const RecordView = () => {
       categoryId: selectedCategoryId,
       subCategoryName: selectedSubCategory,
       participantIds: selectedPeople,
+      tagIds: selectedTagIds,
       isProcessed: false, 
       transcription: transcription, 
       quickNotes: []
@@ -210,6 +254,10 @@ export const RecordView = () => {
 
   const togglePerson = (id: string) => {
     setSelectedPeople(selectedPeople.includes(id) ? selectedPeople.filter(p => p !== id) : [...selectedPeople, id]);
+  };
+  
+  const toggleTag = (tagId: string) => {
+    setSelectedTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]);
   };
 
   const handleAddProject = async () => {
@@ -306,7 +354,7 @@ export const RecordView = () => {
                   ))}
                 </div>
               )}
-
+              
               {projectTags && projectTags.length > 0 && (
                 <div className="space-y-3">
                   <h2 className="font-bold text-gray-700">Taggar</h2>
@@ -314,9 +362,9 @@ export const RecordView = () => {
                     {projectTags.map(tag => (
                       <button
                         key={tag.id}
-                        onClick={() => setSelectedTagIds(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
+                        onClick={() => toggleTag(tag.id)}
                         className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${
-                          selectedTagIds.includes(tag.id) ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-200'
+                          selectedTagIds.includes(tag.id) ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-gray-600 border-gray-200'
                         }`}
                       >
                         {tag.name}
@@ -394,7 +442,7 @@ export const RecordView = () => {
 
           <div className="flex justify-between items-center w-full max-w-md">
             
-            {/* VÄNSTER: Avbryt-knapp (Visas nu alltid) */}
+            {/* VÄNSTER: Avbryt-knapp */}
             <button 
               onClick={() => isRecording ? handleCancelRecording() : navigate(-1)} 
               className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 font-bold text-sm transition-colors w-[110px]"

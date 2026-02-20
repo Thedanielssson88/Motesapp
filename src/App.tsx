@@ -6,6 +6,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { seedDatabase } from './services/db';
+import { processQueue } from './services/queueService'; // LADE TILL DENNA IMPORT
 import { Dashboard } from './views/Dashboard';
 import { RecordView } from './views/RecordView';
 import { MeetingDetail } from './views/MeetingDetail';
@@ -21,6 +22,7 @@ import { BottomNav } from './components/BottomNav';
 function App() {
   useEffect(() => { 
     seedDatabase(); 
+    processQueue(); // LADE TILL DENNA! Startar kön om det finns fastnade jobb vid app-start.
   }, []);
 
   return (

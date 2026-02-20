@@ -1,6 +1,6 @@
 import { db } from './db';
 import { processMeetingAI, reprocessMeetingFromText } from './geminiService';
-import { BackgroundTask } from '@capacitor/background-task';
+import { BackgroundTask } from '@capawesome/capacitor-background-task'; // UPPDATERAD IMPORT
 import { Capacitor } from '@capacitor/core';
 
 let isProcessingQueue = false;
@@ -16,7 +16,7 @@ export const addToQueue = async (meetingId: string, type: 'audio' | 'text') => {
     createdAt: new Date().toISOString()
   });
   
-  processQueue(); // Trigga processen direkt
+  processQueue(); 
 };
 
 export const processQueue = async () => {
@@ -35,11 +35,12 @@ export const processQueue = async () => {
       startedAt: new Date().toISOString() 
     });
 
-    // Blixtviktigt för mobila enheter: Be OS att inte döda tråden!
     let taskId: any;
     if (Capacitor.isNativePlatform()) {
+      // UPPDATERAD: Här startar vi uppgiften med det nya pluginet
       taskId = await BackgroundTask.beforeExit(async () => {
-        // Appen stängdes eller lades i bakgrunden, men systemet tillåter att detta löper klart
+        // Appen stängdes eller lades i bakgrunden.
+        // Processen får nu löpa på (viktigt för iOS och Android)
       });
     }
 
@@ -66,17 +67,16 @@ export const processQueue = async () => {
         status: 'error', 
         error: error.message || 'Okänt fel inträffade' 
       });
-      // Sätt till false så vi kan försöka igen via UI
       await db.meetings.update(job.meetingId, { isProcessed: false });
     } finally {
       if (Capacitor.isNativePlatform() && taskId) {
-         BackgroundTask.finish({ taskId }); // Vi är klara, släpp låset.
+         // UPPDATERAD: Säger till systemet att uppgiften är klar och det är okej att sova.
+         BackgroundTask.finish({ taskId });
       }
     }
   } finally {
     isProcessingQueue = false;
     
-    // Processa nästa i kön
     const moreJobs = await db.processingJobs.where('status').equals('pending').count();
     if (moreJobs > 0) {
       setTimeout(processQueue, 2000);

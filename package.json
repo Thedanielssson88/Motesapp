@@ -11,11 +11,13 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/core": "^8.1.0",
+    "@capawesome/capacitor-background-task": "^8.0.1",
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.4.1",
-    "capacitor-voice-recorder": "^7.0.6",
+    "capacitor-voice-recorder": "^1.1.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "dexie": "^4.0.7",
