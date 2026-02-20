@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
 import { Link } from 'react-router-dom';
-import { Mic, Clock, Calendar, Search, X, AlertTriangle, Settings, Tag } from 'lucide-react';
+import { Mic, Clock, Calendar, Search, X, AlertTriangle, Settings, Tag, Activity } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { hasApiKey } from '../services/geminiService';
 import { clsx } from 'clsx';
@@ -25,6 +25,10 @@ export const Dashboard = () => {
   const meetings = useLiveQuery(() => db.meetings.orderBy('date').reverse().toArray());
   const categories = useLiveQuery(() => db.categories.toArray());
   const allTags = useLiveQuery(() => db.tags.toArray());
+  
+  // Hämta aktiva jobb för att visa röd notis-prick
+  const activeJobs = useLiveQuery(() => db.processingJobs.where('status').anyOf(['pending', 'processing']).toArray());
+  const activeJobsCount = activeJobs?.length || 0;
 
   const enrichedMeetings = useMemo(() => {
     if (!meetings || !projects || !categories) return [];
@@ -51,110 +55,140 @@ export const Dashboard = () => {
   }, [enrichedMeetings, activeProjectId, activeCategoryId, filterTag, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-white p-6 pb-24">
+    <div className="min-h-screen bg-slate-50 p-6 pb-24">
       <header className="flex justify-between items-center mb-6 pt-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Hej! 👋</h1>
           <p className="text-gray-500 text-sm">Dags att göra stordåd.</p>
         </div>
-        <div className="h-10 w-10 bg-gray-200 rounded-full overflow-hidden border-2 border-white shadow">
-          <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Avatar" />
+        
+        {/* HÖGER HÖRN: Aktivitet och Profilbild */}
+        <div className="flex items-center gap-4">
+          <Link to="/queue" className="relative p-2.5 bg-white rounded-full shadow-sm hover:bg-gray-50 transition border border-gray-100">
+            <Activity size={20} className={activeJobsCount > 0 ? "text-blue-600" : "text-gray-500"} />
+            {activeJobsCount > 0 && (
+              <span className="absolute top-0 right-0 h-3.5 w-3.5 bg-red-500 rounded-full border-2 border-white flex items-center justify-center">
+                 {/* Liten prick för att visa att det pågår */}
+              </span>
+            )}
+          </Link>
+          <div className="h-10 w-10 bg-gray-200 rounded-full overflow-hidden border-2 border-white shadow">
+            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Avatar" />
+          </div>
         </div>
       </header>
 
       {isApiKeyMissing && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-lg">
-          <div className="flex">
-            <div className="py-1"><AlertTriangle className="h-5 w-5 text-yellow-500 mr-3" /></div>
-            <div>
-              <p className="font-bold">Gemini API-nyckel saknas</p>
-              <p className="text-sm">För att kunna analysera dina möten, lägg till din API-nyckel i inställningarna.</p>
-              <Link to="/settings" className="text-sm text-yellow-700 hover:text-yellow-800 font-semibold mt-2 inline-flex items-center gap-1">
-                Gå till Inställningar <Settings size={14} />
-              </Link>
-            </div>
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-xl shadow-sm flex items-start gap-3">
+          <AlertTriangle className="text-yellow-600 shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h3 className="font-bold text-yellow-800 text-sm">API-nyckel saknas</h3>
+            <p className="text-yellow-700 text-xs mt-1">Du måste lägga in en Gemini API-nyckel för att AI-analysen ska fungera.</p>
+            <Link to="/settings" className="inline-flex items-center gap-1 text-yellow-800 font-bold text-xs mt-2 hover:underline">
+              Gå till Inställningar <Settings size={12} />
+            </Link>
           </div>
         </div>
       )}
 
       <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+          <Search className="h-5 w-5 text-gray-400" />
+        </div>
         <input 
           type="text" 
-          placeholder="Sök möten, anteckningar..." 
+          className="block w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-sm shadow-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+          placeholder="Sök bland möten, beslut och projekt..." 
           value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="w-full bg-white border-gray-200 pl-10 pr-10 py-3 rounded-xl shadow-sm text-sm focus:ring-blue-500 focus:border-blue-500"
+          onChange={(e) => setSearchQuery(e.target.value)}
         />
         {searchQuery && (
-          <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-            <X size={16} />
+          <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-4 flex items-center">
+            <X className="h-5 w-5 text-gray-400 hover:text-gray-600" />
           </button>
         )}
       </div>
 
-      <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar">
-        <button onClick={() => setActiveProjectId('all')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeProjectId === 'all' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600'}`}>
-          Alla Projekt
+      <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+        <button onClick={() => { setActiveProjectId('all'); setActiveCategoryId('all'); }} className={clsx("px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap shadow-sm transition-all", activeProjectId === 'all' ? "bg-gray-800 text-white" : "bg-white text-gray-600 border border-gray-200")}>
+          Alla Möten
         </button>
-        {projects?.map(p => (
-          <button key={p.id} onClick={() => setActiveProjectId(p.id)} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${activeProjectId === p.id ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600'}`}>
-            {p.name}
+        {projects?.map(project => (
+          <button key={project.id} onClick={() => { setActiveProjectId(project.id); setActiveCategoryId('all'); }} className={clsx("px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap shadow-sm transition-all", activeProjectId === project.id ? "bg-blue-600 text-white" : "bg-white text-gray-600 border border-gray-200")}>
+            {project.name}
           </button>
         ))}
       </div>
 
-      <div className="flex gap-2 mb-8 overflow-x-auto no-scrollbar">
-        <button onClick={() => setFilterTag('all')} className={clsx("px-3 py-1.5 rounded-full text-xs font-bold", filterTag === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500')}>Alla Taggar</button>
-        {allTags?.filter(t => activeProjectId === 'all' || t.projectId === activeProjectId).map(tag => (
-          <button key={tag.id} onClick={() => setFilterTag(tag.id)} className={clsx("px-3 py-1.5 rounded-full text-xs font-bold", filterTag === tag.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500')}>
-            {tag.name}
-          </button>
-        ))}
-      </div>
-      
-      <Link to="/record" className="fixed bottom-24 right-6 bg-blue-600 text-white p-4 rounded-2xl shadow-xl shadow-blue-200 hover:scale-105 transition-transform z-40 flex gap-2 items-center font-bold pr-6">
-        <Mic size={24} /> Spela in
-      </Link>
+      {activeProjectId !== 'all' && categories && categories.filter(c => c.projectId === activeProjectId).length > 0 && (
+         <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+           <button onClick={() => setActiveCategoryId('all')} className={clsx("px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all", activeCategoryId === 'all' ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500")}>
+             Alla Kategorier
+           </button>
+           {categories.filter(c => c.projectId === activeProjectId).map(cat => (
+             <button key={cat.id} onClick={() => setActiveCategoryId(cat.id)} className={clsx("px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all", activeCategoryId === cat.id ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500")}>
+               {cat.name}
+             </button>
+           ))}
+         </div>
+      )}
 
-      <section>
-        <h2 className="font-bold text-lg mb-4 text-gray-800">{searchQuery ? 'Sökresultat' : 'Senaste Möten'}</h2>
-        <div className="space-y-4">
-          {filteredMeetings?.map(meeting => (
-            <Link to={`/meeting/${meeting.id}`} key={meeting.id} className="block bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all group">
+      {activeProjectId !== 'all' && allTags && allTags.filter(t => t.projectId === activeProjectId).length > 0 && (
+         <div className="flex gap-2 mb-6 overflow-x-auto no-scrollbar pb-1 items-center">
+           <Tag size={12} className="text-gray-400 ml-1" />
+           <button onClick={() => setFilterTag('all')} className={clsx("px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all", filterTag === 'all' ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-500")}>
+             Alla Taggar
+           </button>
+           {allTags.filter(t => t.projectId === activeProjectId).map(tag => (
+             <button key={tag.id} onClick={() => setFilterTag(tag.id)} className={clsx("px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all", filterTag === tag.id ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500")}>
+               {tag.name}
+             </button>
+           ))}
+         </div>
+      )}
+
+      <div className="space-y-4">
+        {filteredMeetings.length === 0 ? (
+           <div className="text-center py-10">
+             <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Search className="text-gray-400" size={24} />
+             </div>
+             <p className="text-gray-500 font-medium">Inga möten hittades</p>
+           </div>
+        ) : (
+          filteredMeetings.map(meeting => (
+            <Link key={meeting.id} to={`/meeting/${meeting.id}`} className="block bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all active:scale-[0.98]">
               <div className="flex justify-between items-start mb-2">
-                <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wide">
-                  {meeting.projectName || 'Inget projekt'}
-                </span>
-                <span className="text-xs text-gray-400 flex items-center gap-1"><Calendar size={12} /> {new Date(meeting.date).toLocaleDateString()}</span>
+                <div className="flex flex-col">
+                   <h3 className="font-bold text-gray-900 leading-tight">{meeting.title}</h3>
+                   <span className="text-xs text-blue-600 font-bold mt-1 uppercase tracking-wide">{meeting.projectName || 'Osorterat'}</span>
+                </div>
+                {!meeting.isProcessed && (
+                   <span className="bg-yellow-100 text-yellow-700 text-[10px] font-bold px-2 py-1 rounded-full animate-pulse whitespace-nowrap ml-2">I kö / Oanalyserat</span>
+                )}
               </div>
               
-              <h3 className="font-bold text-lg text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">{meeting.title}</h3>
-              
-              <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
-                <Clock size={12} /> {Math.floor(meeting.duration / 60)} min
-                {meeting.isProcessed && <span className="text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium ml-2">Analyserad</span>}
-                 {meeting.tagIds?.map(tagId => {
-                  const tag = allTags?.find(t => t.id === tagId);
-                  return tag ? <Tag key={tag.id} size={12} /> : null;
-                })}
+              <div className="flex items-center gap-4 text-xs text-gray-500 font-medium mt-3">
+                <div className="flex items-center gap-1.5"><Calendar size={14}/> {new Date(meeting.date).toLocaleDateString('sv-SE', { month: 'short', day: 'numeric'})}</div>
+                <div className="flex items-center gap-1.5"><Clock size={14}/> {Math.floor(meeting.duration / 60)} min</div>
+                {meeting.participantIds.length > 0 && (
+                   <div className="flex items-center gap-1.5"><Users size={14}/> {meeting.participantIds.length}</div>
+                )}
               </div>
-
-              {/* HÄR VISAS DEN KORTA SAMMANFATTNINGEN */}
-              {meeting.protocol?.summary && (
-                <div className="text-sm text-gray-600 leading-relaxed mt-2 bg-slate-50 p-3 rounded-xl border border-gray-100">
-                  {meeting.protocol.summary}
+              
+              {meeting.tagIds && meeting.tagIds.length > 0 && (
+                <div className="flex gap-1 mt-3">
+                   {meeting.tagIds.map(tid => {
+                     const tag = allTags?.find(t => t.id === tid);
+                     if(!tag) return null;
+                     return <span key={tid} className="bg-gray-100 text-gray-500 text-[9px] font-bold px-2 py-0.5 rounded-sm">{tag.name}</span>
+                   })}
                 </div>
               )}
             </Link>
-          ))}
-          {filteredMeetings?.length === 0 && (
-            <div className="text-center p-8 bg-white rounded-2xl border border-dashed border-gray-300">
-              <p className="text-gray-400 text-sm">{searchQuery ? 'Inga träffar hittades' : 'Inga inspelningar än'}</p>
-            </div>
-          )}
-        </div>
-      </section>
+          ))
+        )}
+      </div>
     </div>
   );
 };

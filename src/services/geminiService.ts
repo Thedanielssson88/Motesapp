@@ -55,12 +55,14 @@ const buildPrompt = async (meetingId: string): Promise<string> => {
   - Deltar ej: ${absentNames}
 
   **DITT UPPDRAG:**
-  Skapa ett JSON-svar med följande:
-  1. summary: Exakt 3-5 meningar som sammanfattar mötet.
-  2. detailedProtocol: Ett utförligt text-protokoll formatterat i HTML (<h3>, <p>, <ul>, <li>, <strong>). Dela upp ämnen med rubriker. Skapa en Action-lista och Datum/Deadlines.
-  3. decisions: Lista med korta beslut.
-  4. tasks: Lista med uppgifter { title, assignedTo }.
-  5. transcription: Ordagrann transkribering (om du kan extrahera det från ljudet).`;
+  Analysera mötet och skapa ett JSON-svar med exakt denna struktur:
+  1. summary: Exakt 3-5 meningar som sammanfattar mötets syfte och utfall.
+  2. detailedProtocol: Ett strukturerat, professionellt mötesprotokoll formatterat i HTML (<h3>, <p>, <ul>, <li>, <strong>). 
+     - OBS: Detta ska vara en SAMMANSTÄLLNING av diskussionerna uppdelat i ämnen/rubriker.
+     - VIKTIGT: Lägg ABSOLUT INTE in den ordagranna dialogen eller transkriberingen här!
+  3. decisions: En lista med korta, tydliga beslut som togs.
+  4. tasks: En lista med uppgifter i formatet { title, assignedTo }.
+  5. transcription: En ordagrann transkribering av ljudet. Detta ska vara en array där varje objekt innehåller start (sekunder), end (sekunder), text (vad som sades) och speaker (vem som sa det).`;
 }
 
 export const processMeetingAI = async (meetingId: string, onProgress?: (p: number, msg: string) => void) => {
@@ -85,11 +87,11 @@ export const processMeetingAI = async (meetingId: string, onProgress?: (p: numbe
 
   onProgress?.(90, 'Sparar protokoll...');
   const responseData = JSON.parse(result.text || "{}");
-  await updateMeetingWithAIData(meetingId, responseData);
+  await updateMeetingWithAIData(meetingId, responseData, true); // True betyder att vi vill spara transkriberingen från ljudet
   return responseData;
 };
 
-// TEXT-ANALYS (Ingen chunking, men skickar in hela texten på en gång)
+// TEXT-ANALYS
 export const reprocessMeetingFromText = async (meetingId: string, onProgress?: (p: number, msg: string) => void) => {
   const ai = getAIClient();
   if (!ai) throw new Error("API-nyckel saknas. Gå till inställningar.");
@@ -105,20 +107,21 @@ export const reprocessMeetingFromText = async (meetingId: string, onProgress?: (
 
   onProgress?.(40, 'Analyserar mötet. Detta kan ta en stund...');
   
-  // Använder Promise.race som en fail-safe om nätverket skulle "hänga" sig helt i 3 minuter.
   const resultPromise = ai.models.generateContent({
     model: modelName,
     contents: [{ parts: [{ text: prompt }, { text: `\n\n--- TRANSKRIBERING ATT ANALYSERA ---\n${fullText}` }] }],
     config: { responseMimeType: "application/json", responseSchema: responseSchema }
   });
 
-  // Hård timeout på 3 minuter för att inte fastna för evigt
   const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout: Analysen tog för lång tid.")), 180000));
   
   const result = await Promise.race([resultPromise, timeoutPromise]);
 
   onProgress?.(90, 'Sparar protokoll...');
   const responseData = JSON.parse(result.text || "{}");
+  
+  // False betyder att vi INTE skriver över den befintliga transkriberingen i databasen
+  // eftersom vi redan har den (vi skickade ju in den som text).
   await updateMeetingWithAIData(meetingId, responseData, false); 
   return responseData;
 };
@@ -138,10 +141,18 @@ const updateMeetingWithAIData = async (meetingId: string, data: any, shouldUpdat
   }
 
   const updateData: Partial<any> = {
-    protocol: { summary: data.summary || '', detailedProtocol: data.detailedProtocol || '', decisions: data.decisions || [] },
+    protocol: { 
+        summary: data.summary || '', 
+        detailedProtocol: data.detailedProtocol || '', 
+        decisions: data.decisions || [] 
+    },
     isProcessed: true
   };
-  if (shouldUpdateTranscription && data.transcription) updateData.transcription = data.transcription;
+  
+  // Bara spara transkriberingen om AI:n faktiskt levererade en OCH vi bad om det
+  if (shouldUpdateTranscription && data.transcription && data.transcription.length > 0) {
+      updateData.transcription = data.transcription;
+  }
 
   await db.meetings.update(meetingId, updateData);
 }

@@ -4,9 +4,11 @@
  */
 
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { seedDatabase } from './services/db';
-import { processQueue } from './services/queueService'; // LADE TILL DENNA IMPORT
+import { processQueue } from './services/queueService';
 import { Dashboard } from './views/Dashboard';
 import { RecordView } from './views/RecordView';
 import { MeetingDetail } from './views/MeetingDetail';
@@ -19,14 +21,53 @@ import ProjectDetailView from './views/ProjectDetailView';
 import { QueueView } from './views/QueueView';
 import { BottomNav } from './components/BottomNav';
 
+// En osynlig komponent som kopplar telefonens bakåt-swipe till Reacts router
+const HardwareBackButtonHandler = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    let listenerHandle: any = null;
+
+    const setupBackButton = async () => {
+      // VIKTIGT: Kolla så vi faktiskt är i Android/iOS och inte i en webbläsare
+      if (Capacitor.isNativePlatform()) {
+        try {
+          listenerHandle = await CapacitorApp.addListener('backButton', () => {
+            if (location.pathname === '/') {
+              CapacitorApp.exitApp();
+            } else {
+              navigate(-1);
+            }
+          });
+        } catch (error) {
+          console.warn('Kunde inte registrera bakåt-knappen:', error);
+        }
+      }
+    };
+
+    setupBackButton();
+
+    return () => {
+      if (listenerHandle && listenerHandle.remove) {
+        listenerHandle.remove();
+      }
+    };
+  }, [location.pathname, navigate]);
+
+  return null;
+};
+
 function App() {
   useEffect(() => { 
     seedDatabase(); 
-    processQueue(); // LADE TILL DENNA! Startar kön om det finns fastnade jobb vid app-start.
+    processQueue(); 
   }, []);
 
   return (
     <BrowserRouter>
+      <HardwareBackButtonHandler /> 
+      
       <div className="max-w-md mx-auto bg-white min-h-screen relative shadow-2xl overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto no-scrollbar">
           <Routes>

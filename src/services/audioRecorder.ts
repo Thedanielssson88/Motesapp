@@ -9,7 +9,6 @@ export class AudioRecorderService {
   private dataArray: Uint8Array | null = null;
   private stream: MediaStream | null = null;
   
-  // Kollar om vi är i en riktig app (APK/iOS) eller i webbläsaren
   private isNative = Capacitor.isNativePlatform();
 
   async start(): Promise<void> {
@@ -24,43 +23,60 @@ export class AudioRecorderService {
       }
       
       await VoiceRecorder.startRecording();
-      
-      // Sätter upp en array för att fejka ljudvågor i UI:t under native-inspelning
       this.dataArray = new Uint8Array(256); 
       console.log("Native inspelning startad!");
 
     } else {
-      // --- WEBB / WINDOWS ---
+      // --- WEBB / WINDOWS / ANDROID CHROME ---
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Webbläsaren stödjer inte ljudinspelning. Kräver HTTPS.");
       }
 
+      // FIX 1: Skapa och väck AudioContext DIREKT, innan någon 'await' sker.
+      // Om vi väntar på mikrofonen först, "glömmer" webbläsaren bort att användaren
+      // faktiskt klickade på knappen, och blockerar ljudet för att förhindra spam.
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      this.audioContext = new AudioContextClass();
+      
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+
+      // FIX 2: Enkel ljudbegäran. Vissa mobiler mutar mikrofonen om man ber om för 
+      // avancerad brusreducering (echoCancellation etc) via webben.
       this.stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+        audio: true 
       });
 
       this.audioChunks = [];
-      this.mediaRecorder = new MediaRecorder(this.stream);
+
+      let options = {};
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        options = { mimeType: 'audio/webm;codecs=opus' };
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        options = { mimeType: 'audio/webm' };
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        options = { mimeType: 'audio/mp4' };
+      }
+
+      this.mediaRecorder = new MediaRecorder(this.stream, options);
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) this.audioChunks.push(event.data);
       };
 
-      this.audioContext = new AudioContext();
-      
-      // FIX FÖR ANDROID-WEBBEN: Väcker ljud-ritaren om den sover!
-      if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
-      }
-
+      // Koppla strömmen till vår visualisering
       const source = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
       source.connect(this.analyser);
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
 
-      this.mediaRecorder.start(100);
-      console.log("Webb-inspelning startad!");
+      // FIX 3: Sätt en timeslice på 1000ms (1 sekund) för att tvinga webbläsaren
+      // att kontinuerligt skriva ner datan i minnet, annars kan Android ibland 
+      // generera en fil som är 0 bytes stor i slutet.
+      this.mediaRecorder.start(1000);
+      console.log("Webb-inspelning startad med format:", this.mediaRecorder.mimeType);
     }
   }
 
@@ -69,7 +85,6 @@ export class AudioRecorderService {
        // --- STOPPA NATIVE ---
        const result = await VoiceRecorder.stopRecording();
        if (result.value && result.value.recordDataBase64) {
-          // Gör om native Base64-ljudet till en Blob som databasen förstår
           const res = await fetch(`data:${result.value.mimeType};base64,${result.value.recordDataBase64}`);
           return await res.blob();
        }
@@ -82,7 +97,8 @@ export class AudioRecorderService {
         }
 
         this.mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+          const finalMimeType = this.mediaRecorder?.mimeType || 'audio/webm';
+          const audioBlob = new Blob(this.audioChunks, { type: finalMimeType });
           
           if (this.stream) this.stream.getTracks().forEach(track => track.stop());
           if (this.audioContext && this.audioContext.state !== 'closed') this.audioContext.close();
@@ -97,8 +113,7 @@ export class AudioRecorderService {
 
   getVisualizerData(): Uint8Array {
     if (this.isNative) {
-       // Native pluginet ger oss inte ljudvågorna i realtid. 
-       // Vi fejkar lite data här så att grafen rör sig och det syns att den spelar in!
+       // Fejkade vågor för APK:n så det syns att den rullar
        if (this.dataArray) {
            for(let i=0; i < this.dataArray.length; i++) {
                this.dataArray[i] = Math.random() > 0.3 ? Math.floor(Math.random() * 80) : 0;
@@ -107,7 +122,6 @@ export class AudioRecorderService {
        }
        return new Uint8Array(0);
     } else {
-       // På webben hämtar vi de äkta ljudvågorna från mikrofonen
         if (this.analyser && this.dataArray) {
           this.analyser.getByteFrequencyData(this.dataArray);
           return this.dataArray;
